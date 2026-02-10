@@ -32,6 +32,7 @@ gcloud services enable \
     servicenetworking.googleapis.com
 
 # 3. Network Configuration (Private Service Access for SQL/Redis)
+# 3. Network Configuration (Private Service Access for SQL/Redis)
 echo "🌐 Configuring Network..."
 # Check if network exists, if not use default
 NETWORK="default"
@@ -48,6 +49,25 @@ gcloud services vpc-peerings connect \
     --ranges=google-managed-services-$NETWORK \
     --network=$NETWORK \
     --project=$PROJECT_ID || echo "Peering likely exists, continuing..."
+
+echo "Creating Serverless VPC Access Connector..."
+if ! gcloud compute networks vpc-access connectors describe inka-connector --region=$REGION > /dev/null 2>&1; then
+    gcloud compute networks vpc-access connectors create inka-connector \
+        --network $NETWORK \
+        --region $REGION \
+        --range 10.8.0.0/28
+else
+    echo "Connector inka-connector exists."
+fi
+
+# ... (SQL and Redis steps remain, but they are after this block in the original file, so we rely on context matching or just replace the blocks we want to allow existing SQL/Redis code to stay if we target correctly?
+# Actually, I need to replace the WHOLE file content or chunks carefully.
+# The original file has steps 3, 4, 5, 6, 7.
+# Step 7 has the bad deployment and the late connector creation.
+# I want to move connector creation to Step 3.
+# So I will modify Step 3 to include connector creation.
+# AND I will modify Step 7 to remove the first deployment and the connector creation.
+
 
 # 4. Cloud SQL Setup
 echo "🗄️ Checking Cloud SQL Instance..."
@@ -122,27 +142,7 @@ create_secret "inka-bot-token" "$BOT_TOKEN"
 # 7. Build and Deploy API
 echo "🔨 Building and Deploying API..."
 gcloud builds submit --tag gcr.io/$PROJECT_ID/inka-api . -f apps/api/Dockerfile
-gcloud run deploy inka-api \
-    --image gcr.io/$PROJECT_ID/inka-api \
-    --region $REGION \
-    --allow-unauthenticated \
-    --set-secrets="DATABASE_URL=inka-database-url:latest,REDIS_URL=inka-redis-url:latest" \
-    --set-env-vars="ENVIRONMENT=production" \
-    --vpc-connector-args=connector-name=serverless-connector 
 
-# Wait... Cloud Run needs a VPC connector to talk to Private IP SQL/Redis.
-# Let's create a VPC connector if it doesn't exist.
-echo "Creating Serverless VPC Access Connector..."
-if ! gcloud compute networks vpc-access connectors describe inka-connector --region=$REGION > /dev/null 2>&1; then
-    gcloud compute networks vpc-access connectors create inka-connector \
-        --network $NETWORK \
-        --region $REGION \
-        --range 10.8.0.0/28
-else
-    echo "Connector inka-connector exists."
-fi
-
-# Re-deploy API with connector
 echo "🚀 Deploying API service..."
 gcloud run deploy inka-api \
     --image gcr.io/$PROJECT_ID/inka-api \
@@ -155,14 +155,16 @@ gcloud run deploy inka-api \
 API_URL=$(gcloud run services describe inka-api --region $REGION --format="value(status.url)")
 echo "✅ API Deployed at: $API_URL"
 
+API_URL=$(gcloud run services describe inka-api --region $REGION --format="value(status.url)")
+echo "✅ API Deployed at: $API_URL"
+
 # 8. Build and Deploy Admin
 echo "🔨 Building and Deploying Admin..."
 # Admin needs API_URL at build time or runtime?
 # Dockerfile uses NEXT_PUBLIC_API_URL. It's built into the image at build time for static sites usually,
 # or used at runtime if using SSR. The dockerfile is nginx (static).
 # So we need to pass build-arg.
-gcloud builds submit --tag gcr.io/$PROJECT_ID/inka-admin apps/admin \
-    --substitutions=_API_URL=$API_URL
+
 
 # Admin Dockerfile needs to be slightly adjusted to accept ARG if we use Cloud Build substitutions easily,
 # OR we just pass it as --build-arg to the docker build command that Cloud Build runs.

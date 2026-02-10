@@ -6,6 +6,7 @@ from src.app.domains.clients.api import router as clients_router
 from src.app.domains.masters.api import router as masters_router
 from src.app.domains.bookings.api import router as bookings_router
 from src.app.domains.support.api import router as support_router
+from src.app.domains.setup.api import router as setup_router
 
 def create_app() -> FastAPI:
     setup_logging()
@@ -20,6 +21,7 @@ def create_app() -> FastAPI:
     app.include_router(masters_router, prefix="/api/v1/masters", tags=["Masters"])
     app.include_router(bookings_router, prefix="/api/v1/bookings", tags=["Bookings"])
     app.include_router(support_router, prefix="/api/v1/support", tags=["Support"])
+    app.include_router(setup_router, prefix="/api/v1", tags=["Setup"])
 
     @app.get("/")
     async def root():

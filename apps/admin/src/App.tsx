@@ -2,6 +2,7 @@ import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-d
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import DashboardLayout from '@/layouts/DashboardLayout';
 import { useAuthStore } from '@/stores/auth';
+import Setup from '@/pages/Setup';
 
 // Lazy load pages for performance
 import { memo } from 'react';
@@ -37,6 +38,7 @@ function App() {
       <Router>
         <Routes>
           <Route path="/login" element={<Login />} />
+          <Route path="/setup" element={<Setup />} />
           <Route
             path="/"
             element={
