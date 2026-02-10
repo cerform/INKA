@@ -1,0 +1,17 @@
+{
+    "name": "inka-monorepo",
+    "version": "0.1.0",
+    "private": true,
+    "workspaces": [
+        "apps/admin"
+    ],
+    "scripts": {
+        "dev:admin": "npm run dev --workspace=apps/admin",
+        "build:admin": "npm run build --workspace=apps/admin",
+        "lint:admin": "npm run lint --workspace=apps/admin"
+    },
+    "devDependencies": {
+        "@types/node": "^20.11.0",
+        "typescript": "^5.3.3"
+    }
+}
