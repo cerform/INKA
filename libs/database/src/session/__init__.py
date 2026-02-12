@@ -1,31 +1,42 @@
 from sqlalchemy import create_engine
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession
 from sqlalchemy.orm import sessionmaker, Session
-from packages.core.config import settings
+from functools import lru_cache
 
-# Async Engine (for API)
-async_engine = create_async_engine(
-    str(settings.SQLALCHEMY_DATABASE_URI).replace("postgresql://", "postgresql+asyncpg://"),
-    echo=False,
-    future=True,
-)
+def _get_db_uri():
+    from packages.core.config import settings
+    return str(settings.SQLALCHEMY_DATABASE_URI)
 
-# Sync Engine (for Bot and Migration logic)
-sync_engine = create_engine(
-    str(settings.SQLALCHEMY_DATABASE_URI).replace("postgresql+asyncpg://", "postgresql://"),
-    echo=False,
-    future=True,
-)
+@lru_cache()
+def _get_async_engine():
+    uri = _get_db_uri()
+    return create_async_engine(
+        uri.replace("postgresql://", "postgresql+asyncpg://"),
+        echo=False,
+        future=True,
+    )
 
-SessionLocal = sessionmaker(
-    autocommit=False, autoflush=False, bind=sync_engine
-)
+@lru_cache()
+def _get_sync_engine():
+    uri = _get_db_uri()
+    return create_engine(
+        uri.replace("postgresql+asyncpg://", "postgresql://"),
+        echo=False,
+        future=True,
+    )
+
+def SessionLocal():
+    engine = _get_sync_engine()
+    _SessionLocal = sessionmaker(
+        autocommit=False, autoflush=False, bind=engine
+    )
+    return _SessionLocal()
 
 async def get_db():
     """Dependency for FastAPI endpoints."""
-    from sqlalchemy.ext.asyncio import AsyncSession as _AsyncSession
+    engine = _get_async_engine()
     async_session = sessionmaker(
-        async_engine, class_=_AsyncSession, expire_on_commit=False
+        engine, class_=AsyncSession, expire_on_commit=False
     )
     async with async_session() as session:
         yield session
