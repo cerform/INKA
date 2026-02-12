@@ -19,6 +19,7 @@ COPY apps/bot/ ./apps/bot/
 
 # Create packages structure for imports
 RUN mkdir -p /app/packages && \
+    touch /app/packages/__init__.py && \
     ln -s /app/libs/core/src /app/packages/core && \
     ln -s /app/libs/database/src /app/packages/db
 
