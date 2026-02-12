@@ -1,22 +1,28 @@
-from typing import List
+from typing import List, Optional
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from pydantic import AnyHttpUrl, PostgresDsn, RedisDsn, validator
 
 class Settings(BaseSettings):
     PROJECT_NAME: str = "INKA Admin"
     API_V1_STR: str = "/api/v1"
-    SECRET_KEY: str
+    SECRET_KEY: str = "change-me-in-production"
 
     # Database
-    POSTGRES_SERVER: str
-    POSTGRES_USER: str
-    POSTGRES_PASSWORD: str
-    POSTGRES_DB: str
+    POSTGRES_SERVER: str = "localhost"
+    POSTGRES_USER: str = "postgres"
+    POSTGRES_PASSWORD: str = "postgres"
+    POSTGRES_DB: str = "inka"
     POSTGRES_PORT: int = 5432
     SQLALCHEMY_DATABASE_URI: str | None = None
 
+    # Allow DATABASE_URL from Cloud Run secrets to override
+    DATABASE_URL: str | None = None
+
     @validator("SQLALCHEMY_DATABASE_URI", pre=True)
     def assemble_db_connection(cls, v: str | None, values: dict[str, any]) -> str:
+        # Use DATABASE_URL from Cloud Run secrets if available
+        if values.get("DATABASE_URL"):
+            return values["DATABASE_URL"]
         if isinstance(v, str):
             return v
         return str(PostgresDsn.build(
@@ -29,7 +35,7 @@ class Settings(BaseSettings):
         ))
 
     # Redis
-    REDIS_HOST: str
+    REDIS_HOST: str = "localhost"
     REDIS_PORT: int = 6379
     REDIS_URL: str | None = None
 
@@ -44,7 +50,7 @@ class Settings(BaseSettings):
         ))
 
     # Telegram
-    TELEGRAM_BOT_TOKEN: str
+    TELEGRAM_BOT_TOKEN: str = ""
     TELEGRAM_WEBHOOK_URL: AnyHttpUrl | None = None
 
     model_config = SettingsConfigDict(
@@ -54,3 +60,4 @@ class Settings(BaseSettings):
     )
 
 settings = Settings()
+
