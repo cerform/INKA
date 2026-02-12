@@ -5,10 +5,27 @@ set -e
 # Usage: ./deploy.sh [dev|staging|prod]
 
 ENVIRONMENT=${1:-dev}
-PROJECT_ID="your-gcp-project-id"  # TODO: Replace with your project ID
+# Fetch Project ID from gcloud config
+PROJECT_ID=$(gcloud config get-value project 2>/dev/null)
+
+if [ -z "$PROJECT_ID" ]; then
+    echo -e "${RED}❌ Could not determine Google Cloud Project ID. Please run 'gcloud config set project <PROJECT_ID>'${NC}"
+    exit 1
+fi
+
+# Fetch Version from Git
+if command -v git &> /dev/null; then
+    VERSION=$(git rev-parse --short HEAD)
+else
+    VERSION="latest"
+    echo -e "${YELLOW}⚠️  Git not found, using version: $VERSION${NC}"
+fi
+
 REGION="europe-west1"
 
 echo "🚀 Deploying INKA to Google Cloud Run ($ENVIRONMENT)"
+echo "   Project: $PROJECT_ID"
+echo "   Version: $VERSION"
 
 # Colors for output
 RED='\033[0,31m'
@@ -21,10 +38,6 @@ if ! command -v gcloud &> /dev/null; then
     echo -e "${RED}❌ gcloud CLI not found. Please install: https://cloud.google.com/sdk/docs/install${NC}"
     exit 1
 fi
-
-# Set project
-echo -e "${YELLOW}📋 Setting GCP project to: $PROJECT_ID${NC}"
-gcloud config set project $PROJECT_ID
 
 # Enable required APIs
 echo -e "${YELLOW}🔧 Enabling required Google Cloud APIs...${NC}"
@@ -83,10 +96,25 @@ if ! gcloud secrets describe database-url-$ENVIRONMENT 2>/dev/null; then
     echo -e "${YELLOW}⚠️  Update database-url-$ENVIRONMENT secret with correct password${NC}"
 fi
 
+# Grant Secret Manager Accessor to Cloud Run Service Account
+echo -e "${YELLOW}🔑 Configuring IAM permissions...${NC}"
+PROJECT_NUMBER=$(gcloud projects describe $PROJECT_ID --format="value(projectNumber)")
+SERVICE_Account="${PROJECT_NUMBER}-compute@developer.gserviceaccount.com"
+echo "   Granting Secret Manager Accessor to $SERVICE_Account"
+
+gcloud projects add-iam-policy-binding $PROJECT_ID \
+    --member="serviceAccount:$SERVICE_Account" \
+    --role="roles/secretmanager.secretAccessor" \
+    --condition=None --quiet > /dev/null
+
 # Deploy API
-echo -e "${YELLOW}🚀 Deploying API service...${NC}"
+echo -e "${YELLOW}🚀 Building and Deploying API service...${NC}"
+# Build with both specific version tag and latest
+gcloud builds submit --config cloudbuild.yaml --substitutions=_IMAGE=gcr.io/$PROJECT_ID/inka-api-$ENVIRONMENT:$VERSION,_DOCKERFILE=apps/api/Dockerfile .
+gcloud container images add-tag gcr.io/$PROJECT_ID/inka-api-$ENVIRONMENT:$VERSION gcr.io/$PROJECT_ID/inka-api-$ENVIRONMENT:latest --quiet
+
 gcloud run deploy inka-api-$ENVIRONMENT \
-    --source ./apps/api \
+    --image gcr.io/$PROJECT_ID/inka-api-$ENVIRONMENT:$VERSION \
     --region $REGION \
     --platform managed \
     --allow-unauthenticated \
@@ -102,9 +130,12 @@ API_URL=$(gcloud run services describe inka-api-$ENVIRONMENT --region $REGION --
 echo -e "${GREEN}✅ API deployed: $API_URL${NC}"
 
 # Deploy Bot
-echo -e "${YELLOW}🤖 Deploying Bot service...${NC}"
+echo -e "${YELLOW}🤖 Building and Deploying Bot service...${NC}"
+gcloud builds submit --config cloudbuild.yaml --substitutions=_IMAGE=gcr.io/$PROJECT_ID/inka-bot-$ENVIRONMENT:$VERSION,_DOCKERFILE=apps/bot/Dockerfile .
+gcloud container images add-tag gcr.io/$PROJECT_ID/inka-bot-$ENVIRONMENT:$VERSION gcr.io/$PROJECT_ID/inka-bot-$ENVIRONMENT:latest --quiet
+
 gcloud run deploy inka-bot-$ENVIRONMENT \
-    --source ./apps/bot \
+    --image gcr.io/$PROJECT_ID/inka-bot-$ENVIRONMENT:$VERSION \
     --region $REGION \
     --platform managed \
     --no-allow-unauthenticated \
@@ -120,13 +151,12 @@ BOT_URL=$(gcloud run services describe inka-bot-$ENVIRONMENT --region $REGION --
 echo -e "${GREEN}✅ Bot deployed: $BOT_URL${NC}"
 
 # Deploy Admin Panel
-echo -e "${YELLOW}💻 Deploying Admin Panel...${NC}"
-cd apps/admin
-npm run build
-cd ../..
+echo -e "${YELLOW}💻 Building and Deploying Admin Panel...${NC}"
+gcloud builds submit --config cloudbuild.yaml --substitutions=_IMAGE=gcr.io/$PROJECT_ID/inka-admin-$ENVIRONMENT:$VERSION,_DOCKERFILE=apps/admin/Dockerfile .
+gcloud container images add-tag gcr.io/$PROJECT_ID/inka-admin-$ENVIRONMENT:$VERSION gcr.io/$PROJECT_ID/inka-admin-$ENVIRONMENT:latest --quiet
 
 gcloud run deploy inka-admin-$ENVIRONMENT \
-    --source ./apps/admin \
+    --image gcr.io/$PROJECT_ID/inka-admin-$ENVIRONMENT:$VERSION \
     --region $REGION \
     --platform managed \
     --allow-unauthenticated \
@@ -136,6 +166,7 @@ gcloud run deploy inka-admin-$ENVIRONMENT \
     --memory 512Mi
 
 ADMIN_URL=$(gcloud run services describe inka-admin-$ENVIRONMENT --region $REGION --format="value(status.url)")
+
 echo -e "${GREEN}✅ Admin Panel deployed: $ADMIN_URL${NC}"
 
 # Summary

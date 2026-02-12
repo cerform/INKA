@@ -19,11 +19,16 @@ RUN pip install --no-cache-dir .
 # Copy application code
 COPY apps/api/ ./apps/api/
 
+# Create packages structure for imports
+RUN mkdir -p /app/packages && \
+    ln -s /app/libs/core/src /app/packages/core && \
+    ln -s /app/libs/database/src /app/packages/db
+
 # Expose port
 EXPOSE 8080
 
 # Environment variables
-ENV PYTHONPATH=/app
+ENV PYTHONPATH=/app:/app/apps/api
 ENV PORT=8080
 
 # Run migrations and start server

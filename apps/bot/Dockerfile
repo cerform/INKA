@@ -17,8 +17,13 @@ RUN pip install --no-cache-dir .
 # Copy application code
 COPY apps/bot/ ./apps/bot/
 
+# Create packages structure for imports
+RUN mkdir -p /app/packages && \
+    ln -s /app/libs/core/src /app/packages/core && \
+    ln -s /app/libs/database/src /app/packages/db
+
 # Set Python path
-ENV PYTHONPATH=/app
+ENV PYTHONPATH=/app:/app/apps/bot
 ENV PORT=8080
 
 # Run bot
