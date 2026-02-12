@@ -1,0 +1,83 @@
+name: Deploy to Cloud Run
+
+on:
+  push:
+    branches: [ "main" ]
+  workflow_dispatch:
+
+env:
+  PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }}
+  REGION: us-central1
+  ARTIFACT_REPO: inka-repo
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: 'read'
+      id-token: 'write'
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Google Auth
+        uses: google-github-actions/auth@v2
+        with:
+          credentials_json: '${{ secrets.GCP_CREDENTIALS }}'
+
+      - name: Set up Cloud SDK
+        uses: google-github-actions/setup-gcloud@v1
+
+      - name: Configure Docker
+        run: gcloud auth configure-docker ${{ env.REGION }}-docker.pkg.dev
+
+      # Build & Push API
+      - name: Build API
+        run: docker build -t ${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.ARTIFACT_REPO }}/api:${{ github.sha }} -f apps/api/Dockerfile .
+      - name: Push API
+        run: docker push ${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.ARTIFACT_REPO }}/api:${{ github.sha }}
+
+      # Build & Push Bot
+      - name: Build Bot
+        run: docker build -t ${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.ARTIFACT_REPO }}/bot:${{ github.sha }} -f apps/bot/Dockerfile .
+      - name: Push Bot
+        run: docker push ${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.ARTIFACT_REPO }}/bot:${{ github.sha }}
+
+      # Build & Push Admin
+      - name: Build Admin
+        run: docker build -t ${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.ARTIFACT_REPO }}/admin:${{ github.sha }} -f apps/admin/Dockerfile .
+      - name: Push Admin
+        run: docker push ${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.ARTIFACT_REPO }}/admin:${{ github.sha }}
+
+      # Deploy API
+      - name: Deploy API
+        uses: google-github-actions/deploy-cloudrun@v2
+        with:
+          service: inka-api
+          image: ${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.ARTIFACT_REPO }}/api:${{ github.sha }}
+          region: ${{ env.REGION }}
+          env_vars: |
+            PROJECT_NAME=INKA Admin
+          secrets: |
+            POSTGRES_PASSWORD=POSTGRES_PASSWORD:latest
+            SECRET_KEY=SECRET_KEY:latest
+
+      # Deploy Bot
+      - name: Deploy Bot
+        uses: google-github-actions/deploy-cloudrun@v2
+        with:
+          service: inka-bot
+          image: ${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.ARTIFACT_REPO }}/bot:${{ github.sha }}
+          region: ${{ env.REGION }}
+          secrets: |
+            TELEGRAM_BOT_TOKEN=TELEGRAM_BOT_TOKEN:latest
+            POSTGRES_PASSWORD=POSTGRES_PASSWORD:latest
+
+      # Deploy Admin
+      - name: Deploy Admin
+        uses: google-github-actions/deploy-cloudrun@v2
+        with:
+          service: inka-admin
+          image: ${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.ARTIFACT_REPO }}/admin:${{ github.sha }}
+          region: ${{ env.REGION }}

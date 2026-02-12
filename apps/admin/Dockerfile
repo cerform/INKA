@@ -1,23 +1,31 @@
-# Build stage
-FROM node:20-alpine AS build
+# Build Stage
+FROM node:20-slim AS builder
 
 WORKDIR /app
 
-COPY package*.json ./
-RUN npm install
+# Copy package files
+COPY package.json package-lock.json ./
+# Copy workspace config if any (assuming standalone for now based on package.json view)
+# If root package.json exists, we might need it, but let's assume monorepo needs distinct install for now or copy all.
+# Given complexity, let's copy everything needed for admin. (Reviewing structure again might be needed but let's start simple)
+COPY apps/admin/package.json ./apps/admin/
 
-COPY . .
-ARG VITE_API_URL
-ENV VITE_API_URL=$VITE_API_URL
+# Install dependencies
+# We need to install from root if it's a monorepo workspace.
+# For now, let's assume we can build admin in isolation or copy root context.
+# Best practice for monorepo Dockerfile: Context is Root.
+COPY package.json package-lock.json ./
+COPY apps/admin ./apps/admin
+
+RUN npm ci
+WORKDIR /app/apps/admin
 RUN npm run build
 
+# Runtime Stage
+FROM nginx:alpine
 
-# Production stage
-FROM nginx:stable-alpine
+COPY --from=builder /app/apps/admin/dist /usr/share/nginx/html
+COPY apps/admin/nginx.conf /etc/nginx/conf.d/default.conf
 
-COPY --from=build /app/dist /usr/share/nginx/html
-# COPY nginx.conf /etc/nginx/conf.d/default.conf
-
-EXPOSE 80
-
+EXPOSE 8080
 CMD ["nginx", "-g", "daemon off;"]

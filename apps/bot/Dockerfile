@@ -1,11 +1,10 @@
-FROM python:3.11-slim
+FROM python:3.12-slim
 
 WORKDIR /app
 
 # Install system dependencies
-RUN apt-get update && apt-get install -y \
-    gcc \
-    postgresql-client \
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    curl \
     && rm -rf /var/lib/apt/lists/*
 
 # Copy dependency files
@@ -13,10 +12,14 @@ COPY pyproject.toml ./
 COPY libs/ ./libs/
 
 # Install Python dependencies
-RUN pip install --no-cache-dir -e .[dev]
+RUN pip install --no-cache-dir .
 
 # Copy application code
 COPY apps/bot/ ./apps/bot/
 
+# Set Python path
+ENV PYTHONPATH=/app
+ENV PORT=8080
+
 # Run bot
-CMD ["python", "-m", "apps.bot.src.main"]
+CMD ["python", "apps/bot/src/main.py"]

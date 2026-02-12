@@ -20,6 +20,8 @@ dp.callback_query.middleware(I18nMiddleware())
 
 # Register Routers
 dp.include_router(booking.router)
+from apps.bot.handlers.orchestrator import orchestrator_router
+dp.include_router(orchestrator_router)
 
 async def start_bot():
     print("Starting Telegram Bot...")
