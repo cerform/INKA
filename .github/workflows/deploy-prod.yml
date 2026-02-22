@@ -1,0 +1,276 @@
+name: Deploy → PROD
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Release version tag (e.g. v1.2.3)"
+        required: true
+      skip_24h_check:
+        description: "HOTFIX: Skip 24h stage stability check (requires justification)"
+        required: false
+        default: "false"
+      skip_justification:
+        description: "If skipping 24h check, provide justification"
+        required: false
+
+env:
+  PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }}
+  REGION: europe-west1
+  ARTIFACT_REPO: inka-repo
+  ENVIRONMENT: prod
+
+jobs:
+  # ─────────────────────────────────────────
+  # GATE 1: Stage Stability (24h for major/minor)
+  # ─────────────────────────────────────────
+  stage-stability-check:
+    name: "Stage 24h Stability Gate"
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: pip install httpx tomli psycopg2-binary
+
+      - name: Check stage deployment stability
+        env:
+          DATABASE_URL: ${{ secrets.STAGE_DATABASE_URL }}
+          INPUT_VERSION: ${{ github.event.inputs.version }}
+          SKIP_CHECK: ${{ github.event.inputs.skip_24h_check }}
+          SKIP_JUSTIFICATION: ${{ github.event.inputs.skip_justification }}
+        run: python scripts/check_stage_stability.py
+
+  # ─────────────────────────────────────────
+  # GATE 2: Defect Registry Check
+  # ─────────────────────────────────────────
+  defect-gate:
+    name: "Defect Gate (S1/S2 Check)"
+    runs-on: ubuntu-latest
+    needs: [stage-stability-check]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: pip install httpx tomli
+
+      - name: Run deployment gate (strict prod)
+        env:
+          DEFECT_API_URL: ${{ secrets.DEFECT_API_URL }}
+          DEFECT_API_KEY: ${{ secrets.DEFECT_API_KEY }}
+          TARGET_ENV: prod
+        run: python scripts/gate_check.py --env=prod --strict
+
+  # ─────────────────────────────────────────
+  # GATE 3: Release Tag Verification
+  # ─────────────────────────────────────────
+  tag-verification:
+    name: "Release Tag Verification"
+    runs-on: ubuntu-latest
+    needs: [defect-gate]
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Verify release tag exists
+        run: |
+          TAG=${{ github.event.inputs.version }}
+          if ! git tag -l | grep -q "^${TAG}$"; then
+            echo "❌ Tag ${TAG} does not exist in repo"
+            exit 1
+          fi
+          echo "✅ Tag ${TAG} verified"
+
+      - name: Verify CHANGELOG.md has entry for version
+        run: |
+          VERSION=$(echo "${{ github.event.inputs.version }}" | sed 's/^v//')
+          if ! grep -q "## \[${VERSION}\]" CHANGELOG.md; then
+            echo "❌ CHANGELOG.md has no entry for version ${VERSION}"
+            exit 1
+          fi
+          echo "✅ Changelog entry found for ${VERSION}"
+
+  # ─────────────────────────────────────────
+  # MANUAL APPROVAL (lead approval required)
+  # ─────────────────────────────────────────
+  approval:
+    name: "Production Release Approval"
+    runs-on: ubuntu-latest
+    needs: [tag-verification]
+    environment: production    # GitHub Environment: requires release_manager approval
+    steps:
+      - name: Approval recorded
+        run: echo "✅ Production deployment approved by ${{ github.actor }}"
+
+  # ─────────────────────────────────────────
+  # CANARY DEPLOYMENT (10% traffic)
+  # ─────────────────────────────────────────
+  canary-deploy:
+    name: "Canary Deploy (10%)"
+    runs-on: ubuntu-latest
+    needs: [approval]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Google Auth
+        uses: google-github-actions/auth@v2
+        with:
+          credentials_json: ${{ secrets.GCP_CREDENTIALS_PROD }}
+
+      - name: Get version (without v prefix)
+        id: get_version
+        run: |
+          VERSION=$(echo "${{ github.event.inputs.version }}" | sed 's/^v//')
+          echo "version=${VERSION}" >> $GITHUB_OUTPUT
+
+      - name: Configure Docker
+        run: gcloud auth configure-docker ${{ env.REGION }}-docker.pkg.dev
+
+      - name: Deploy API canary (10% traffic)
+        id: deploy_api
+        run: |
+          gcloud run deploy inka-api \
+            --image=${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.ARTIFACT_REPO }}/api:${{ steps.get_version.outputs.version }}-stage \
+            --region=${{ env.REGION }} \
+            --tag=canary \
+            --no-traffic \
+            --project=${{ env.PROJECT_ID }}
+
+          # Shift 10% to canary
+          gcloud run services update-traffic inka-api \
+            --to-tags=canary=10 \
+            --region=${{ env.REGION }} \
+            --project=${{ env.PROJECT_ID }}
+
+          REVISION=$(gcloud run services describe inka-api --region=${{ env.REGION }} --format='value(status.traffic[0].revisionName)' --project=${{ env.PROJECT_ID }})
+          echo "canary_revision=${REVISION}" >> $GITHUB_OUTPUT
+
+      - name: Deploy Bot canary
+        run: |
+          gcloud run deploy inka-bot \
+            --image=${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.ARTIFACT_REPO }}/bot:${{ steps.get_version.outputs.version }}-stage \
+            --region=${{ env.REGION }} \
+            --tag=canary \
+            --no-traffic \
+            --project=${{ env.PROJECT_ID }}
+          gcloud run services update-traffic inka-bot \
+            --to-tags=canary=10 \
+            --region=${{ env.REGION }} \
+            --project=${{ env.PROJECT_ID }}
+
+      - name: Register canary in release_registry
+        env:
+          DATABASE_URL: ${{ secrets.PROD_DATABASE_URL }}
+          VERSION: ${{ steps.get_version.outputs.version }}
+          GIT_SHA: ${{ github.sha }}
+          DEPLOYED_BY: ${{ github.actor }}
+          ENVIRONMENT: prod
+          IS_CANARY: "true"
+          CANARY_PERCENT: "10"
+          ROLLBACK_REVISION: ${{ steps.deploy_api.outputs.canary_revision }}
+        run: python scripts/register_release.py
+
+      - name: Notify canary deployed
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_ADMIN_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_RELEASE_CHAT_ID }}
+          VERSION: ${{ steps.get_version.outputs.version }}
+        run: |
+          curl -s -X POST "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage" \
+            -d chat_id="${TELEGRAM_CHAT_ID}" \
+            -d text="🐦 *PROD CANARY* 10% deployed%0A*Version:* v${VERSION}%0AMonitoring 30 min before full promotion." \
+            -d parse_mode=Markdown
+
+  # ─────────────────────────────────────────
+  # HEALTH MONITORING (30 min canary window)
+  # ─────────────────────────────────────────
+  canary-health-check:
+    name: "Canary Health Monitor (30min)"
+    runs-on: ubuntu-latest
+    needs: [canary-deploy]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: pip install httpx google-cloud-monitoring
+
+      - name: Monitor canary health for 30 minutes
+        env:
+          GCP_PROJECT_ID: ${{ env.PROJECT_ID }}
+          API_URL: ${{ secrets.PROD_API_URL }}
+          GOOGLE_APPLICATION_CREDENTIALS: ${{ secrets.GCP_CREDENTIALS_PROD }}
+          ERROR_RATE_THRESHOLD: "0.01"     # 1%
+          LATENCY_P95_THRESHOLD: "2000"    # 2000ms
+        run: python scripts/monitor_canary.py --duration=1800 --interval=60
+
+  # ─────────────────────────────────────────
+  # FULL PROMOTION (100% traffic)
+  # ─────────────────────────────────────────
+  promote-full:
+    name: "Promote to 100% Traffic"
+    runs-on: ubuntu-latest
+    needs: [canary-health-check]
+    steps:
+      - name: Google Auth
+        uses: google-github-actions/auth@v2
+        with:
+          credentials_json: ${{ secrets.GCP_CREDENTIALS_PROD }}
+
+      - name: Shift all traffic to new revision
+        run: |
+          gcloud run services update-traffic inka-api \
+            --to-latest \
+            --region=${{ env.REGION }} \
+            --project=${{ env.PROJECT_ID }}
+          gcloud run services update-traffic inka-bot \
+            --to-latest \
+            --region=${{ env.REGION }} \
+            --project=${{ env.PROJECT_ID }}
+          gcloud run services update-traffic inka-admin \
+            --to-latest \
+            --region=${{ env.REGION }} \
+            --project=${{ env.PROJECT_ID }}
+
+      - name: Update release_registry to DEPLOYED (100%)
+        env:
+          DATABASE_URL: ${{ secrets.PROD_DATABASE_URL }}
+          VERSION: ${{ github.event.inputs.version }}
+          ENVIRONMENT: prod
+        run: |
+          python scripts/update_release_status.py \
+            --version="${VERSION}" \
+            --env="${ENVIRONMENT}" \
+            --status=DEPLOYED \
+            --canary-percent=100
+
+      - name: Run DB migrations on Prod
+        env:
+          DATABASE_URL: ${{ secrets.PROD_DATABASE_URL }}
+        run: alembic -c libs/database/alembic.ini upgrade head
+
+      - name: Notify production deployed
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_ADMIN_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_RELEASE_CHAT_ID }}
+          VERSION: ${{ github.event.inputs.version }}
+        run: |
+          curl -s -X POST "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage" \
+            -d chat_id="${TELEGRAM_CHAT_ID}" \
+            -d text="✅ *PROD* deployment complete (100%)%0A*Version:* ${VERSION}%0A*By:* ${{ github.actor }}" \
+            -d parse_mode=Markdown

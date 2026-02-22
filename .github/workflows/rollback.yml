@@ -1,0 +1,96 @@
+name: Rollback
+
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: "Target environment to rollback"
+        required: true
+        type: choice
+        options: [dev, stage, prod]
+      reason:
+        description: "Rollback reason / incident description"
+        required: true
+      downgrade_db:
+        description: "Downgrade DB migration? (only if reversible)"
+        required: false
+        default: "false"
+        type: choice
+        options: ["true", "false"]
+
+env:
+  PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }}
+  REGION: europe-west1
+
+jobs:
+  rollback:
+    name: "Execute Rollback → ${{ github.event.inputs.environment }}"
+    runs-on: ubuntu-latest
+    environment: ${{ github.event.inputs.environment }}    # Requires approver for prod
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: pip install httpx psycopg2-binary
+
+      - name: Google Auth
+        uses: google-github-actions/auth@v2
+        with:
+          credentials_json: ${{ secrets.GCP_CREDENTIALS_PROD }}
+
+      - name: Get previous stable revision from release_registry
+        id: get_prev
+        env:
+          DATABASE_URL: ${{ secrets[format('{0}_DATABASE_URL', github.event.inputs.environment)] }}
+          ENVIRONMENT: ${{ github.event.inputs.environment }}
+        run: python scripts/get_rollback_revision.py
+
+      - name: Rollback API traffic to previous revision
+        run: |
+          PREV_REVISION="${{ steps.get_prev.outputs.rollback_revision }}"
+          echo "Rolling back API to: ${PREV_REVISION}"
+          gcloud run services update-traffic inka-api-${{ github.event.inputs.environment == 'prod' && '' || github.event.inputs.environment }} \
+            --to-revisions=${PREV_REVISION}=100 \
+            --region=${{ env.REGION }} \
+            --project=${{ env.PROJECT_ID }}
+
+      - name: Rollback Bot traffic
+        run: |
+          PREV_REVISION="${{ steps.get_prev.outputs.bot_rollback_revision }}"
+          gcloud run services update-traffic inka-bot-${{ github.event.inputs.environment == 'prod' && '' || github.event.inputs.environment }} \
+            --to-revisions=${PREV_REVISION}=100 \
+            --region=${{ env.REGION }} \
+            --project=${{ env.PROJECT_ID }}
+
+      - name: Downgrade DB migration (if requested and reversible)
+        if: github.event.inputs.downgrade_db == 'true'
+        env:
+          DATABASE_URL: ${{ secrets[format('{0}_DATABASE_URL', github.event.inputs.environment)] }}
+        run: |
+          echo "⚠️ Running DB downgrade — verify migration is marked reversible"
+          alembic -c libs/database/alembic.ini downgrade -1
+
+      - name: Log incident to release_registry
+        env:
+          DATABASE_URL: ${{ secrets[format('{0}_DATABASE_URL', github.event.inputs.environment)] }}
+          ENVIRONMENT: ${{ github.event.inputs.environment }}
+          REASON: ${{ github.event.inputs.reason }}
+          ROLLED_BACK_BY: ${{ github.actor }}
+        run: python scripts/log_rollback_incident.py
+
+      - name: Send Telegram alert
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_ADMIN_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_RELEASE_CHAT_ID }}
+          ENV: ${{ github.event.inputs.environment }}
+          REASON: ${{ github.event.inputs.reason }}
+        run: |
+          curl -s -X POST "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage" \
+            -d chat_id="${TELEGRAM_CHAT_ID}" \
+            -d text="🔴 *ROLLBACK* executed on *${ENV}*%0A*By:* ${{ github.actor }}%0A*Reason:* ${REASON}%0A%0A⚠️ RCA required within 24h." \
+            -d parse_mode=Markdown

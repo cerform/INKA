@@ -1,0 +1,173 @@
+name: Deploy → STAGE
+
+on:
+  push:
+    tags:
+      - "v[0-9]+.[0-9]+.[0-9]+"   # triggers only on SemVer tags
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Version tag to deploy (e.g. v1.2.3)"
+        required: true
+
+env:
+  PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }}
+  REGION: europe-west1
+  ARTIFACT_REPO: inka-repo
+  ENVIRONMENT: stage
+  SERVICE_ACCOUNT: ${{ secrets.GCP_SA_STAGE }}
+
+jobs:
+  # ─────────────────────────────────────────
+  # PRE-GATE: Defect Registry Check
+  # ─────────────────────────────────────────
+  defect-gate:
+    name: "Defect Gate Check"
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: pip install httpx tomli
+
+      - name: Run deployment gate
+        env:
+          DEFECT_API_URL: ${{ secrets.DEFECT_API_URL }}
+          DEFECT_API_KEY: ${{ secrets.DEFECT_API_KEY }}
+          TARGET_ENV: stage
+        run: python scripts/gate_check.py --env=stage --strict
+
+  # ─────────────────────────────────────────
+  # MANUAL APPROVAL (GitHub Environment)
+  # ─────────────────────────────────────────
+  approval:
+    name: "Manual Approval Required"
+    runs-on: ubuntu-latest
+    needs: [defect-gate]
+    environment: stage          # GitHub Environment with required reviewers
+    steps:
+      - name: Approval granted
+        run: echo "✅ Stage deployment approved by ${{ github.actor }}"
+
+  # ─────────────────────────────────────────
+  # BUILD & PUSH IMAGES
+  # ─────────────────────────────────────────
+  build:
+    name: "Build & Push (${{ matrix.service }})"
+    runs-on: ubuntu-latest
+    needs: [approval]
+    strategy:
+      matrix:
+        service: [api, bot, admin]
+    outputs:
+      version: ${{ steps.get_version.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Get version
+        id: get_version
+        run: |
+          VERSION=$(python -c "import tomllib; print(tomllib.load(open('pyproject.toml','rb'))['project']['version'])")
+          echo "version=${VERSION}" >> $GITHUB_OUTPUT
+
+      - name: Google Auth
+        uses: google-github-actions/auth@v2
+        with:
+          credentials_json: ${{ secrets.GCP_CREDENTIALS_STAGE }}
+
+      - name: Configure Docker
+        run: gcloud auth configure-docker ${{ env.REGION }}-docker.pkg.dev
+
+      - name: Build image
+        run: |
+          docker build \
+            -t ${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.ARTIFACT_REPO }}/${{ matrix.service }}:${{ steps.get_version.outputs.version }}-stage \
+            -t ${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.ARTIFACT_REPO }}/${{ matrix.service }}:stage-latest \
+            --label "version=${{ steps.get_version.outputs.version }}" \
+            --label "git.sha=${{ github.sha }}" \
+            --label "environment=stage" \
+            -f apps/${{ matrix.service }}/Dockerfile .
+
+      - name: Push image
+        run: |
+          docker push ${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.ARTIFACT_REPO }}/${{ matrix.service }}:${{ steps.get_version.outputs.version }}-stage
+          docker push ${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.ARTIFACT_REPO }}/${{ matrix.service }}:stage-latest
+
+  # ─────────────────────────────────────────
+  # DEPLOY TO STAGE
+  # ─────────────────────────────────────────
+  deploy:
+    name: "Deploy to Stage"
+    runs-on: ubuntu-latest
+    needs: [build]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Google Auth
+        uses: google-github-actions/auth@v2
+        with:
+          credentials_json: ${{ secrets.GCP_CREDENTIALS_STAGE }}
+
+      - name: Get version
+        id: get_version
+        run: |
+          VERSION=$(python -c "import tomllib; print(tomllib.load(open('pyproject.toml','rb'))['project']['version'])")
+          echo "version=${VERSION}" >> $GITHUB_OUTPUT
+
+      - name: Deploy API to Stage
+        uses: google-github-actions/deploy-cloudrun@v2
+        with:
+          service: inka-api-stage
+          image: ${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.ARTIFACT_REPO }}/api:${{ steps.get_version.outputs.version }}-stage
+          region: ${{ env.REGION }}
+          tag: v${{ steps.get_version.outputs.version }}
+          secrets: |
+            POSTGRES_PASSWORD=POSTGRES_PASSWORD_STAGE:latest
+            SECRET_KEY=SECRET_KEY_STAGE:latest
+
+      - name: Deploy Bot to Stage
+        uses: google-github-actions/deploy-cloudrun@v2
+        with:
+          service: inka-bot-stage
+          image: ${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.ARTIFACT_REPO }}/bot:${{ steps.get_version.outputs.version }}-stage
+          region: ${{ env.REGION }}
+          secrets: |
+            TELEGRAM_BOT_TOKEN=TELEGRAM_BOT_TOKEN_STAGE:latest
+            POSTGRES_PASSWORD=POSTGRES_PASSWORD_STAGE:latest
+
+      - name: Deploy Admin to Stage
+        uses: google-github-actions/deploy-cloudrun@v2
+        with:
+          service: inka-admin-stage
+          image: ${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.ARTIFACT_REPO }}/admin:${{ steps.get_version.outputs.version }}-stage
+          region: ${{ env.REGION }}
+
+      - name: Run DB migrations on Stage
+        env:
+          DATABASE_URL: ${{ secrets.STAGE_DATABASE_URL }}
+        run: alembic -c libs/database/alembic.ini upgrade head
+
+      - name: Register deployment in release_registry
+        env:
+          DATABASE_URL: ${{ secrets.STAGE_DATABASE_URL }}
+          VERSION: ${{ steps.get_version.outputs.version }}
+          GIT_SHA: ${{ github.sha }}
+          DEPLOYED_BY: ${{ github.actor }}
+          ENVIRONMENT: stage
+        run: python scripts/register_release.py
+
+      - name: Send Telegram notification
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_ADMIN_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_RELEASE_CHAT_ID }}
+          VERSION: ${{ steps.get_version.outputs.version }}
+        run: |
+          curl -s -X POST "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage" \
+            -d chat_id="${TELEGRAM_CHAT_ID}" \
+            -d text="🚀 *STAGE* deployment complete%0A*Version:* v${VERSION}%0A*By:* ${{ github.actor }}%0A*SHA:* ${{ github.sha }}" \
+            -d parse_mode=Markdown

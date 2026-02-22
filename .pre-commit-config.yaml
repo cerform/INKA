@@ -1,15 +1,21 @@
 repos:
+  # ─── Standard Hooks ───────────────────────────────────────────────────
   - repo: https://github.com/pre-commit/pre-commit-hooks
     rev: v4.5.0
     hooks:
       - id: trailing-whitespace
       - id: end-of-file-fixer
       - id: check-yaml
+      - id: check-toml
+      - id: check-json
       - id: check-added-large-files
-        args: ['--maxkb=1000']
+        args: ["--maxkb=1000"]
       - id: check-merge-conflict
-      - id: detect-private-key
+      - id: detect-private-key            # blocks accidental secret commits
+      - id: no-commit-to-branch
+        args: ["--branch", "main"]        # protect main branch directly
 
+  # ─── Ruff (lint + format) ─────────────────────────────────────────────
   - repo: https://github.com/astral-sh/ruff-pre-commit
     rev: v0.2.1
     hooks:
@@ -17,9 +23,48 @@ repos:
         args: [--fix, --exit-non-zero-on-fix]
       - id: ruff-format
 
+  # ─── Mypy (type check) ────────────────────────────────────────────────
   - repo: https://github.com/pre-commit/mirrors-mypy
     rev: v1.8.0
     hooks:
       - id: mypy
         additional_dependencies: [types-all]
         args: [--ignore-missing-imports]
+
+  # ─── Security scan (bandit) ───────────────────────────────────────────
+  - repo: https://github.com/PyCQA/bandit
+    rev: 1.7.7
+    hooks:
+      - id: bandit
+        args: ["-c", "pyproject.toml", "-r", "apps/", "libs/"]
+        additional_dependencies: ["bandit[toml]"]
+
+  # ─── Secret detection (gitleaks) ──────────────────────────────────────
+  - repo: https://github.com/gitleaks/gitleaks
+    rev: v8.18.1
+    hooks:
+      - id: gitleaks
+
+  # ─── Unit tests (fast only, no DB) ────────────────────────────────────
+  - repo: local
+    hooks:
+      - id: unit-tests
+        name: Fast Unit Tests
+        language: system
+        entry: pytest apps/ libs/ -m "unit" --no-header -q --tb=short
+        pass_filenames: false
+        stages: [pre-push]          # run before push, not every commit
+
+      - id: version-check
+        name: Version bump check
+        language: python
+        entry: python scripts/version_check.py
+        pass_filenames: false
+        stages: [pre-push]
+
+      - id: changelog-check
+        name: CHANGELOG.md updated
+        language: system
+        entry: bash -c 'git diff --cached --name-only | grep -q CHANGELOG.md || (echo "❌ Update CHANGELOG.md before pushing" && exit 1)'
+        pass_filenames: false
+        stages: [pre-push]

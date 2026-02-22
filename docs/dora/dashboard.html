@@ -1,0 +1,687 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>INKA Admin — DORA Metrics Dashboard</title>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet"/>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+<style>
+:root{
+  --bg:#0a0e1a;--surface:#111827;--surface2:#1a2235;--border:#1f2d45;
+  --text:#e2e8f0;--muted:#64748b;--accent:#3b82f6;--accent2:#8b5cf6;
+  --green:#22c55e;--yellow:#f59e0b;--red:#ef4444;--cyan:#06b6d4;
+  --orange:#f97316;--pink:#ec4899;
+  --elite:#22c55e;--high:#3b82f6;--medium:#f59e0b;--low:#ef4444;
+}
+*{margin:0;padding:0;box-sizing:border-box;}
+body{background:var(--bg);color:var(--text);font-family:'Inter',sans-serif;min-height:100vh;}
+/* ─── NAV ─── */
+nav{background:var(--surface);border-bottom:1px solid var(--border);padding:0 24px;display:flex;align-items:center;justify-content:space-between;height:60px;position:sticky;top:0;z-index:100;}
+.nav-brand{display:flex;align-items:center;gap:10px;font-weight:800;font-size:1.1rem;}
+.nav-brand .dot{width:10px;height:10px;background:var(--green);border-radius:50%;animation:pulse 2s infinite;}
+@keyframes pulse{0%,100%{box-shadow:0 0 0 0 rgba(34,197,94,.4);}50%{box-shadow:0 0 0 8px rgba(34,197,94,0);}}
+.nav-tabs{display:flex;gap:4px;}
+.nav-tab{padding:8px 16px;border-radius:8px;cursor:pointer;font-size:.85rem;font-weight:500;color:var(--muted);border:none;background:transparent;transition:.2s;}
+.nav-tab.active,.nav-tab:hover{background:var(--surface2);color:var(--text);}
+.nav-tab.active{color:var(--accent);}
+.nav-right{display:flex;align-items:center;gap:12px;font-size:.8rem;color:var(--muted);}
+.live-badge{background:rgba(34,197,94,.15);color:var(--green);padding:4px 10px;border-radius:20px;font-size:.75rem;font-weight:600;}
+/* ─── MAIN ─── */
+main{padding:24px;max-width:1600px;margin:0 auto;}
+.view{display:none;}
+.view.active{display:block;}
+/* ─── HEADER ─── */
+.page-header{margin-bottom:24px;}
+.page-header h1{font-size:1.6rem;font-weight:800;margin-bottom:4px;}
+.page-header p{color:var(--muted);font-size:.9rem;}
+/* ─── ALERTS ─── */
+.alert-bar{background:rgba(239,68,68,.08);border:1px solid rgba(239,68,68,.3);border-radius:10px;padding:12px 18px;margin-bottom:20px;display:flex;align-items:center;gap:10px;font-size:.85rem;}
+.alert-bar .alert-icon{font-size:1.1rem;}
+/* ─── DORA SCORECARD ─── */
+.dora-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:16px;margin-bottom:24px;}
+.dora-card{background:var(--surface);border:1px solid var(--border);border-radius:14px;padding:20px;position:relative;overflow:hidden;transition:.2s;}
+.dora-card:hover{border-color:var(--accent);transform:translateY(-2px);}
+.dora-card::before{content:'';position:absolute;top:0;left:0;right:0;height:3px;}
+.dora-card.elite::before{background:var(--elite);}
+.dora-card.high::before{background:var(--high);}
+.dora-card.medium::before{background:var(--medium);}
+.dora-card.low::before{background:var(--low);}
+.dora-label{font-size:.75rem;text-transform:uppercase;letter-spacing:.08em;color:var(--muted);margin-bottom:8px;font-weight:600;}
+.dora-value{font-size:2rem;font-weight:800;line-height:1;margin-bottom:6px;}
+.dora-unit{font-size:.75rem;color:var(--muted);margin-bottom:10px;}
+.tier-badge{display:inline-flex;align-items:center;gap:5px;padding:4px 10px;border-radius:20px;font-size:.72rem;font-weight:700;text-transform:uppercase;}
+.tier-badge.elite{background:rgba(34,197,94,.15);color:var(--elite);}
+.tier-badge.high{background:rgba(59,130,246,.15);color:var(--high);}
+.tier-badge.medium{background:rgba(245,158,11,.15);color:var(--medium);}
+.tier-badge.low{background:rgba(239,68,68,.15);color:var(--low);}
+.dora-trend{font-size:.78rem;margin-top:10px;}
+.trend-up{color:var(--green);}
+.trend-down{color:var(--red);}
+/* ─── METRICS ROW ─── */
+.metrics-row{display:grid;grid-template-columns:repeat(6,1fr);gap:12px;margin-bottom:24px;}
+.metric-mini{background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:16px;text-align:center;}
+.metric-mini .val{font-size:1.5rem;font-weight:800;margin:4px 0;}
+.metric-mini .lbl{font-size:.72rem;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;}
+.metric-mini .sub{font-size:.75rem;margin-top:4px;}
+/* ─── CHART GRID ─── */
+.chart-grid{display:grid;grid-template-columns:2fr 1fr;gap:16px;margin-bottom:24px;}
+.chart-grid-3{display:grid;grid-template-columns:repeat(3,1fr);gap:16px;margin-bottom:24px;}
+.chart-grid-2{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:24px;}
+.card{background:var(--surface);border:1px solid var(--border);border-radius:14px;padding:20px;}
+.card-title{font-size:.85rem;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;margin-bottom:16px;display:flex;align-items:center;justify-content:space-between;}
+.card-title .badge{background:var(--surface2);padding:3px 8px;border-radius:6px;font-size:.7rem;color:var(--text);}
+canvas{max-height:200px;}
+/* ─── HEATMAP ─── */
+.heatmap-grid{display:grid;grid-template-columns:repeat(13,1fr);gap:3px;margin-top:8px;}
+.heatmap-cell{aspect-ratio:1;border-radius:3px;cursor:pointer;transition:.2s;position:relative;}
+.heatmap-cell:hover::after{content:attr(data-tip);position:absolute;bottom:calc(100% + 4px);left:50%;transform:translateX(-50%);background:#1e293b;border:1px solid var(--border);padding:4px 8px;border-radius:6px;font-size:.7rem;white-space:nowrap;z-index:10;pointer-events:none;}
+.h0{background:var(--surface2);}
+.h1{background:rgba(59,130,246,.3);}
+.h2{background:rgba(59,130,246,.5);}
+.h3{background:rgba(245,158,11,.6);}
+.h4{background:rgba(239,68,68,.7);}
+.heatmap-legend{display:flex;align-items:center;gap:6px;margin-top:8px;font-size:.7rem;color:var(--muted);}
+.heatmap-legend span{width:12px;height:12px;border-radius:2px;display:inline-block;}
+/* ─── TABLE ─── */
+.data-table{width:100%;border-collapse:collapse;font-size:.82rem;}
+.data-table th{text-align:left;padding:8px 12px;color:var(--muted);font-size:.72rem;text-transform:uppercase;letter-spacing:.06em;border-bottom:1px solid var(--border);}
+.data-table td{padding:10px 12px;border-bottom:1px solid rgba(31,45,69,.5);}
+.data-table tr:hover td{background:var(--surface2);}
+.sev{display:inline-block;padding:2px 8px;border-radius:4px;font-size:.7rem;font-weight:700;}
+.sev.p0{background:rgba(239,68,68,.2);color:var(--red);}
+.sev.p1{background:rgba(249,115,22,.2);color:var(--orange);}
+.sev.p2{background:rgba(245,158,11,.2);color:var(--yellow);}
+.sev.ok{background:rgba(34,197,94,.2);color:var(--green);}
+/* ─── STABILITY INDEX ─── */
+.stability-ring{display:flex;align-items:center;justify-content:center;flex-direction:column;padding:20px 0;}
+.stability-num{font-size:3rem;font-weight:800;background:linear-gradient(135deg,var(--green),var(--cyan));-webkit-background-clip:text;-webkit-text-fill-color:transparent;}
+/* ─── ALERTS PANEL ─── */
+.alert-list{display:flex;flex-direction:column;gap:10px;}
+.alert-item{background:var(--surface2);border-radius:10px;padding:14px;border-left:3px solid;}
+.alert-item.crit{border-color:var(--red);}
+.alert-item.warn{border-color:var(--yellow);}
+.alert-item.info{border-color:var(--accent);}
+.alert-item .alert-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:4px;}
+.alert-item .alert-name{font-weight:700;font-size:.85rem;}
+.alert-item .alert-val{font-size:.78rem;color:var(--muted);}
+.alert-item .alert-meta{font-size:.75rem;color:var(--muted);}
+/* ─── MODULE TABLE ─── */
+.risk-bar{height:6px;border-radius:3px;background:var(--surface2);margin-top:4px;}
+.risk-fill{height:100%;border-radius:3px;}
+/* ─── RESPONSIVE ─── */
+@media(max-width:1100px){
+  .dora-grid{grid-template-columns:repeat(2,1fr);}
+  .metrics-row{grid-template-columns:repeat(3,1fr);}
+  .chart-grid{grid-template-columns:1fr;}
+  .chart-grid-3{grid-template-columns:1fr 1fr;}
+}
+@media(max-width:700px){
+  .dora-grid{grid-template-columns:1fr 1fr;}
+  .metrics-row{grid-template-columns:repeat(2,1fr);}
+  .chart-grid-3{grid-template-columns:1fr;}
+}
+/* ─── PERIOD PICKER ─── */
+.period-tabs{display:flex;gap:4px;background:var(--surface2);border-radius:8px;padding:3px;}
+.period-tab{padding:5px 12px;border-radius:6px;cursor:pointer;font-size:.78rem;font-weight:500;color:var(--muted);border:none;background:transparent;transition:.2s;}
+.period-tab.active{background:var(--surface);color:var(--text);}
+</style>
+</head>
+<body>
+
+<!-- NAV -->
+<nav>
+  <div class="nav-brand">
+    <div class="dot"></div>
+    INKA Admin — DORA Dashboard
+  </div>
+  <div class="nav-tabs">
+    <button class="nav-tab active" onclick="switchView('exec')">📊 Executive</button>
+    <button class="nav-tab" onclick="switchView('eng')">🔧 Engineering</button>
+    <button class="nav-tab" onclick="switchView('alerts')">🚨 Alerts</button>
+  </div>
+  <div class="nav-right">
+    <span class="live-badge">● LIVE</span>
+    <span>2026-02-22 08:51 UTC+2</span>
+  </div>
+</nav>
+
+<main>
+
+<!-- ═══════════════════════════════════════ -->
+<!-- EXECUTIVE VIEW                          -->
+<!-- ═══════════════════════════════════════ -->
+<div class="view active" id="view-exec">
+  <div class="page-header">
+    <h1>Engineering Performance Dashboard</h1>
+    <p>DORA metrics · 30-day rolling window · INKA Admin DevOps</p>
+  </div>
+
+  <!-- Active alert banner -->
+  <div class="alert-bar">
+    <span class="alert-icon">⚠️</span>
+    <strong>CFR_HIGH:</strong>&nbsp;Change Failure Rate is at <strong>12.5%</strong> (threshold 10%) — 7-day rolling window.
+    &nbsp;|&nbsp; <strong>MTTR elevated:</strong> 5.2h avg vs 4h threshold on P1 incidents.
+  </div>
+
+  <!-- DORA Scorecard -->
+  <div class="dora-grid">
+    <div class="dora-card elite">
+      <div class="dora-label">Deployment Frequency</div>
+      <div class="dora-value" style="color:var(--elite)">3.4</div>
+      <div class="dora-unit">deploys / day (30d avg)</div>
+      <span class="tier-badge elite">⬆ Elite</span>
+      <div class="dora-trend trend-up">▲ +18% vs prev 30d</div>
+    </div>
+    <div class="dora-card high">
+      <div class="dora-label">Lead Time for Changes</div>
+      <div class="dora-value" style="color:var(--high)">4.2</div>
+      <div class="dora-unit">hours median (p50)</div>
+      <span class="tier-badge high">✦ High</span>
+      <div class="dora-trend trend-up">▲ -12% (faster)</div>
+    </div>
+    <div class="dora-card medium">
+      <div class="dora-label">Change Failure Rate</div>
+      <div class="dora-value" style="color:var(--medium)">12.5%</div>
+      <div class="dora-unit">of prod deployments</div>
+      <span class="tier-badge medium">⚠ Medium</span>
+      <div class="dora-trend trend-down">▼ +4.5% (worse)</div>
+    </div>
+    <div class="dora-card high">
+      <div class="dora-label">Mean Time To Recovery</div>
+      <div class="dora-value" style="color:var(--high)">5.2</div>
+      <div class="dora-unit">hours avg (30d)</div>
+      <span class="tier-badge high">✦ High</span>
+      <div class="dora-trend trend-down">▼ +0.8h (slower)</div>
+    </div>
+  </div>
+
+  <!-- Secondary Metrics -->
+  <div class="metrics-row">
+    <div class="metric-mini">
+      <div class="lbl">Stability Index</div>
+      <div class="val" style="color:var(--green)">77</div>
+      <div class="sub" style="color:var(--muted)">/100</div>
+    </div>
+    <div class="metric-mini">
+      <div class="lbl">Quality Score</div>
+      <div class="val" style="color:var(--accent)">84</div>
+      <div class="sub" style="color:var(--yellow)">▼ -3 pts</div>
+    </div>
+    <div class="metric-mini">
+      <div class="lbl">Risk Score</div>
+      <div class="val" style="color:var(--yellow)">58</div>
+      <div class="sub" style="color:var(--muted)">avg / deploy</div>
+    </div>
+    <div class="metric-mini">
+      <div class="lbl">Compliance</div>
+      <div class="val" style="color:var(--green)">91%</div>
+      <div class="sub" style="color:var(--green)">▲ +2%</div>
+    </div>
+    <div class="metric-mini">
+      <div class="lbl">Chaos Success</div>
+      <div class="val" style="color:var(--cyan)">78%</div>
+      <div class="sub" style="color:var(--muted)">14 experiments</div>
+    </div>
+    <div class="metric-mini">
+      <div class="lbl">Regression Rate</div>
+      <div class="val" style="color:var(--orange)">14%</div>
+      <div class="sub" style="color:var(--red)">▼ +3%</div>
+    </div>
+  </div>
+
+  <!-- Charts Row 1 -->
+  <div class="chart-grid">
+    <div class="card">
+      <div class="card-title">
+        Deployment Velocity — Daily Deploys (90d)
+        <div class="period-tabs">
+          <button class="period-tab active">30d</button>
+          <button class="period-tab">90d</button>
+        </div>
+      </div>
+      <canvas id="dfChart"></canvas>
+    </div>
+    <div class="card">
+      <div class="card-title">DORA Tier Radar</div>
+      <canvas id="radarChart"></canvas>
+    </div>
+  </div>
+
+  <!-- Charts Row 2 -->
+  <div class="chart-grid-3">
+    <div class="card">
+      <div class="card-title">Change Failure Rate (30d)</div>
+      <canvas id="cfrChart"></canvas>
+    </div>
+    <div class="card">
+      <div class="card-title">Mean Time To Recovery</div>
+      <canvas id="mttrChart"></canvas>
+    </div>
+    <div class="card">
+      <div class="card-title">Lead Time Breakdown (hrs)</div>
+      <canvas id="ltcChart"></canvas>
+    </div>
+  </div>
+
+  <!-- Incident Heatmap -->
+  <div class="card" style="margin-bottom:24px;">
+    <div class="card-title">Incident Heatmap — Last 90 Days <span class="badge">P0–P2</span></div>
+    <div class="heatmap-grid" id="heatmap"></div>
+    <div class="heatmap-legend">
+      <span class="h0"></span> No incidents
+      <span class="h1" style="margin-left:8px;"></span> 1
+      <span class="h2" style="margin-left:8px;"></span> 2
+      <span class="h3" style="margin-left:8px;"></span> 3
+      <span class="h4" style="margin-left:8px;"></span> 4+
+    </div>
+  </div>
+
+  <!-- Trend Charts -->
+  <div class="chart-grid-2">
+    <div class="card">
+      <div class="card-title">Quality / Risk / Compliance Trends</div>
+      <canvas id="trendChart"></canvas>
+    </div>
+    <div class="card">
+      <div class="card-title">Stability Index (90d)</div>
+      <canvas id="stabilityChart"></canvas>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════════════════════════════════ -->
+<!-- ENGINEERING VIEW                        -->
+<!-- ═══════════════════════════════════════ -->
+<div class="view" id="view-eng">
+  <div class="page-header">
+    <h1>Engineering Intelligence View</h1>
+    <p>Module-level analysis · Defect density · Risk mapping</p>
+  </div>
+
+  <div class="chart-grid-2">
+    <div class="card">
+      <div class="card-title">Module Defect Density (defects/KLOC)</div>
+      <canvas id="defectChart"></canvas>
+    </div>
+    <div class="card">
+      <div class="card-title">Chaos Experiment Results</div>
+      <canvas id="chaosChart"></canvas>
+    </div>
+  </div>
+
+  <div class="chart-grid-2">
+    <div class="card">
+      <div class="card-title">Lead Time Breakdown by Stage (median hrs)</div>
+      <canvas id="ltcBreakdownChart"></canvas>
+    </div>
+    <div class="card">
+      <div class="card-title">Regression Rate Trend (90d)</div>
+      <canvas id="regressionChart"></canvas>
+    </div>
+  </div>
+
+  <!-- High Risk Modules Table -->
+  <div class="card" style="margin-bottom:24px;">
+    <div class="card-title">High-Risk Module Analysis</div>
+    <table class="data-table">
+      <thead>
+        <tr>
+          <th>Module</th><th>Risk Score</th><th>Defect Density</th>
+          <th>Change Freq</th><th>Migration Risk</th><th>Trend</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td><strong>apps/api</strong></td>
+          <td>
+            <div>72 / 100</div>
+            <div class="risk-bar"><div class="risk-fill" style="width:72%;background:var(--orange)"></div></div>
+          </td>
+          <td>4.2 / KLOC</td><td>8.1/day</td>
+          <td><span class="sev p1">HIGH</span></td>
+          <td class="trend-down">▼ +8</td>
+        </tr>
+        <tr>
+          <td><strong>apps/bot</strong></td>
+          <td>
+            <div>55 / 100</div>
+            <div class="risk-bar"><div class="risk-fill" style="width:55%;background:var(--yellow)"></div></div>
+          </td>
+          <td>2.8 / KLOC</td><td>5.3/day</td>
+          <td><span class="sev p2">MED</span></td>
+          <td class="trend-up">▲ -3</td>
+        </tr>
+        <tr>
+          <td><strong>libs/database</strong></td>
+          <td>
+            <div>81 / 100</div>
+            <div class="risk-bar"><div class="risk-fill" style="width:81%;background:var(--red)"></div></div>
+          </td>
+          <td>6.1 / KLOC</td><td>2.1/day</td>
+          <td><span class="sev p0">CRIT</span></td>
+          <td class="trend-down">▼ +14</td>
+        </tr>
+        <tr>
+          <td><strong>apps/admin</strong></td>
+          <td>
+            <div>34 / 100</div>
+            <div class="risk-bar"><div class="risk-fill" style="width:34%;background:var(--green)"></div></div>
+          </td>
+          <td>1.2 / KLOC</td><td>3.8/day</td>
+          <td><span class="sev ok">LOW</span></td>
+          <td class="trend-up">▲ -5</td>
+        </tr>
+        <tr>
+          <td><strong>libs/auth</strong></td>
+          <td>
+            <div>44 / 100</div>
+            <div class="risk-bar"><div class="risk-fill" style="width:44%;background:var(--yellow)"></div></div>
+          </td>
+          <td>2.1 / KLOC</td><td>1.2/day</td>
+          <td><span class="sev p2">MED</span></td>
+          <td class="trend-up">▲ -2</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  <!-- Migration Risk -->
+  <div class="card" style="margin-bottom:24px;">
+    <div class="card-title">Migration Risk Events — Last 30 Days</div>
+    <table class="data-table">
+      <thead>
+        <tr><th>Date</th><th>Version</th><th>Migration</th><th>Risk</th><th>Outcome</th></tr>
+      </thead>
+      <tbody>
+        <tr><td>2026-02-20</td><td>v1.8.3</td><td>add_idx_bookings_status</td><td><span class="sev p2">MED</span></td><td><span class="sev ok">PASS</span></td></tr>
+        <tr><td>2026-02-14</td><td>v1.8.1</td><td>drop_col_legacy_ref</td><td><span class="sev p1">HIGH</span></td><td><span class="sev ok">PASS</span></td></tr>
+        <tr><td>2026-02-08</td><td>v1.7.9</td><td>alter_users_add_rbac_role</td><td><span class="sev p0">CRIT</span></td><td><span class="sev p1">ROLLBACK</span></td></tr>
+        <tr><td>2026-01-31</td><td>v1.7.7</td><td>create_audit_log_table</td><td><span class="sev p2">LOW</span></td><td><span class="sev ok">PASS</span></td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <!-- Break Glass Log -->
+  <div class="card">
+    <div class="card-title">Break-Glass Events — Last 30 Days <span class="badge">BGF: 3 events</span></div>
+    <table class="data-table">
+      <thead>
+        <tr><th>Timestamp</th><th>Actor</th><th>Action</th><th>Environment</th><th>Duration</th><th>Justification</th></tr>
+      </thead>
+      <tbody>
+        <tr><td>2026-02-18 03:14</td><td>@devops_lead</td><td>Direct DB query</td><td>PROD</td><td>22 min</td><td>P0 incident — data corruption</td></tr>
+        <tr><td>2026-02-10 21:05</td><td>@senior_eng</td><td>Force-push main</td><td>STAGE</td><td>8 min</td><td>Broken CI pipeline block</td></tr>
+        <tr><td>2026-01-29 15:33</td><td>@devops_lead</td><td>Bypass deploy gate</td><td>PROD</td><td>15 min</td><td>Critical hotfix required</td></tr>
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<!-- ═══════════════════════════════════════ -->
+<!-- ALERTS VIEW                             -->
+<!-- ═══════════════════════════════════════ -->
+<div class="view" id="view-alerts">
+  <div class="page-header">
+    <h1>Alert Center</h1>
+    <p>Active threshold violations · DORA metric monitors</p>
+  </div>
+
+  <div class="chart-grid-2" style="margin-bottom:24px;">
+    <div class="card">
+      <div class="card-title">Alert Volume (30d)</div>
+      <canvas id="alertVolumeChart"></canvas>
+    </div>
+    <div class="card">
+      <div class="card-title">Alert Reference Thresholds</div>
+      <table class="data-table">
+        <thead><tr><th>Alert ID</th><th>Metric</th><th>Threshold</th><th>Sev</th></tr></thead>
+        <tbody>
+          <tr><td>CFR_HIGH</td><td>Change Failure Rate</td><td>&gt; 10% (7d)</td><td><span class="sev p1">P1</span></td></tr>
+          <tr><td>CFR_CRIT</td><td>Change Failure Rate</td><td>&gt; 20% (7d)</td><td><span class="sev p0">P0</span></td></tr>
+          <tr><td>MTTR_BREACH</td><td>MTTR avg</td><td>&gt; 4h (30d)</td><td><span class="sev p1">P1</span></td></tr>
+          <tr><td>MTTR_CRIT</td><td>MTTR avg</td><td>&gt; 8h (30d)</td><td><span class="sev p0">P0</span></td></tr>
+          <tr><td>DF_DROP</td><td>Deployment Freq</td><td>&gt;50% drop (7d)</td><td><span class="sev p2">P2</span></td></tr>
+          <tr><td>LTC_DEGRADED</td><td>Lead Time p95</td><td>&gt; 24h (7d)</td><td><span class="sev p2">P2</span></td></tr>
+          <tr><td>QS_BLOCK</td><td>Quality Score</td><td>&lt;80 stage /&lt;90 prod</td><td><span class="sev p0">P0</span></td></tr>
+          <tr><td>RS_HIGH</td><td>Risk Score</td><td>&gt; 80</td><td><span class="sev p1">P1</span></td></tr>
+          <tr><td>BREAKGLASS</td><td>Break-Glass Freq</td><td>&gt; 2/week</td><td><span class="sev p1">P1</span></td></tr>
+          <tr><td>REGRESSION</td><td>Regression Rate</td><td>&gt; 20%</td><td><span class="sev p1">P1</span></td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-title">Active Alerts <span class="badge" style="background:rgba(239,68,68,.2);color:var(--red)">2 FIRING</span></div>
+    <div class="alert-list" style="margin-top:8px;">
+      <div class="alert-item crit">
+        <div class="alert-head">
+          <span class="alert-name">🔴 CFR_HIGH — Change Failure Rate Exceeded</span>
+          <span class="sev p1">P1</span>
+        </div>
+        <div class="alert-val">Current: 12.5% &nbsp;|&nbsp; Threshold: 10% &nbsp;|&nbsp; Δ +2.5%</div>
+        <div class="alert-meta">Firing since: 2026-02-20 14:30 · Channel: Telegram #alerts · Run: /dora cfr</div>
+      </div>
+      <div class="alert-item warn">
+        <div class="alert-head">
+          <span class="alert-name">🟡 MTTR_BREACH — Recovery Time Above Threshold</span>
+          <span class="sev p1">P1</span>
+        </div>
+        <div class="alert-val">Current: 5.2h &nbsp;|&nbsp; Threshold: 4h &nbsp;|&nbsp; Δ +1.2h</div>
+        <div class="alert-meta">Firing since: 2026-02-19 09:15 · Channel: Telegram #alerts · Run: /dora mttr</div>
+      </div>
+      <div class="alert-item info">
+        <div class="alert-head">
+          <span class="alert-name">🔵 LTC_DEGRADED — Lead Time p95 Approaching Limit</span>
+          <span class="sev p2">P2</span>
+        </div>
+        <div class="alert-val">Current: 19.4h p95 &nbsp;|&nbsp; Threshold: 24h &nbsp;|&nbsp; 19% headroom</div>
+        <div class="alert-meta">Warning (not firing) · Channel: Telegram #devops</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="card" style="margin-top:16px;">
+    <div class="card-title">Telegram Command Reference</div>
+    <table class="data-table">
+      <thead><tr><th>Command</th><th>Description</th></tr></thead>
+      <tbody>
+        <tr><td><code>/dora status</code></td><td>Full DORA scorecard summary</td></tr>
+        <tr><td><code>/dora df</code></td><td>Deployment frequency detail</td></tr>
+        <tr><td><code>/dora ltc</code></td><td>Lead time breakdown</td></tr>
+        <tr><td><code>/dora cfr</code></td><td>Change failure rate + recent failures</td></tr>
+        <tr><td><code>/dora mttr</code></td><td>MTTR detail + open incidents</td></tr>
+        <tr><td><code>/dora module &lt;name&gt;</code></td><td>Module risk & defect density</td></tr>
+        <tr><td><code>/dora alerts</code></td><td>List active alert conditions</td></tr>
+        <tr><td><code>/dora report</code></td><td>Generate executive summary PDF</td></tr>
+        <tr><td><code>/dora chaos</code></td><td>Chaos experiment results</td></tr>
+        <tr><td><code>/dora breakglass</code></td><td>Break-glass event log</td></tr>
+      </tbody>
+    </table>
+  </div>
+</div>
+
+</main>
+
+<script>
+// ─── VIEW SWITCHER ───────────────────────────────────────────────────────────
+function switchView(v){
+  document.querySelectorAll('.view').forEach(el=>el.classList.remove('active'));
+  document.querySelectorAll('.nav-tab').forEach(el=>el.classList.remove('active'));
+  document.getElementById('view-'+v).classList.add('active');
+  event.target.classList.add('active');
+}
+
+// ─── CHART DEFAULTS ──────────────────────────────────────────────────────────
+Chart.defaults.color='#64748b';
+Chart.defaults.borderColor='#1f2d45';
+Chart.defaults.font.family='Inter';
+const P={responsive:true,maintainAspectRatio:true,
+  plugins:{legend:{labels:{boxWidth:10,padding:16,font:{size:11}}},
+           tooltip:{backgroundColor:'#1a2235',borderColor:'#1f2d45',borderWidth:1}}};
+
+// ─── GENERATE LABELS ─────────────────────────────────────────────────────────
+function days(n){
+  const a=[];
+  for(let i=n-1;i>=0;i--){
+    const d=new Date('2026-02-22');d.setDate(d.getDate()-i);
+    a.push(d.toLocaleDateString('en',{month:'short',day:'numeric'}));
+  }
+  return a;
+}
+function rand(lo,hi,n){return Array.from({length:n},()=>+(lo+(hi-lo)*Math.random()).toFixed(2));}
+const L30=days(30),L90=days(90);
+
+// ─── DEPLOYMENT FREQUENCY ────────────────────────────────────────────────────
+new Chart(document.getElementById('dfChart'),{
+  type:'bar',
+  data:{labels:L30,datasets:[
+    {label:'Deployments',data:rand(1,6,30),backgroundColor:'rgba(59,130,246,.5)',
+     borderColor:'#3b82f6',borderWidth:1,borderRadius:4},
+    {label:'7d Avg',data:Array(30).fill(3.4),type:'line',borderColor:'#22c55e',
+     borderWidth:2,pointRadius:0,fill:false}
+  ]},
+  options:{...P,scales:{x:{ticks:{maxTicksLimit:8}},y:{beginAtZero:true,max:8}}}
+});
+
+// ─── DORA RADAR ───────────────────────────────────────────────────────────────
+new Chart(document.getElementById('radarChart'),{
+  type:'radar',
+  data:{labels:['Deploy Freq','Lead Time','CFR','MTTR','Quality','Stability'],
+    datasets:[{
+      label:'Current',data:[95,75,50,70,84,77],fill:true,
+      backgroundColor:'rgba(59,130,246,.15)',borderColor:'#3b82f6',borderWidth:2,pointRadius:4
+    },{
+      label:'Elite Baseline',data:[100,100,95,100,100,100],fill:false,
+      borderColor:'rgba(34,197,94,.4)',borderWidth:1,pointRadius:0,borderDash:[4,4]
+    }]
+  },
+  options:{...P,scales:{r:{min:0,max:100,grid:{color:'#1f2d45'},
+    pointLabels:{color:'#94a3b8',font:{size:11}}}}}
+});
+
+// ─── CFR CHART ───────────────────────────────────────────────────────────────
+const cfrData=rand(5,18,30);
+new Chart(document.getElementById('cfrChart'),{
+  type:'line',
+  data:{labels:L30,datasets:[
+    {label:'CFR %',data:cfrData,fill:true,backgroundColor:'rgba(245,158,11,.08)',
+     borderColor:'#f59e0b',borderWidth:2,tension:.4,pointRadius:2},
+    {label:'Threshold 10%',data:Array(30).fill(10),borderColor:'#ef4444',
+     borderWidth:1,borderDash:[4,4],pointRadius:0,fill:false}
+  ]},
+  options:{...P,scales:{x:{ticks:{maxTicksLimit:6}},y:{beginAtZero:true,max:25,ticks:{callback:v=>v+'%'}}}}
+});
+
+// ─── MTTR CHART ──────────────────────────────────────────────────────────────
+new Chart(document.getElementById('mttrChart'),{
+  type:'line',
+  data:{labels:L30,datasets:[
+    {label:'MTTR (hrs)',data:rand(1,10,30),fill:true,backgroundColor:'rgba(139,92,246,.1)',
+     borderColor:'#8b5cf6',borderWidth:2,tension:.4,pointRadius:2},
+    {label:'Threshold 4h',data:Array(30).fill(4),borderColor:'#ef4444',
+     borderWidth:1,borderDash:[4,4],pointRadius:0,fill:false}
+  ]},
+  options:{...P,scales:{x:{ticks:{maxTicksLimit:6}},y:{beginAtZero:true}}}
+});
+
+// ─── LTC STACKED ─────────────────────────────────────────────────────────────
+new Chart(document.getElementById('ltcChart'),{
+  type:'bar',
+  data:{labels:days(7),datasets:[
+    {label:'Code Review',data:rand(0.5,2,7),backgroundColor:'rgba(59,130,246,.7)',borderRadius:4},
+    {label:'CI Pipeline',data:rand(0.3,0.8,7),backgroundColor:'rgba(139,92,246,.7)',borderRadius:4},
+    {label:'Staging',data:rand(0.5,1.5,7),backgroundColor:'rgba(245,158,11,.7)',borderRadius:4},
+    {label:'Prod Gate',data:rand(0.2,0.5,7),backgroundColor:'rgba(239,68,68,.7)',borderRadius:4}
+  ]},
+  options:{...P,scales:{x:{stacked:true},y:{stacked:true,ticks:{callback:v=>v+'h'}}}}
+});
+
+// ─── HEATMAP ─────────────────────────────────────────────────────────────────
+const hm=document.getElementById('heatmap');
+const wts=[0,1,2,3,4];
+for(let i=0;i<91;i++){
+  const c=document.createElement('div');
+  const v=Math.random()>.75?wts[Math.floor(Math.random()*5)]:0;
+  c.className='heatmap-cell h'+v;
+  const d=new Date('2026-02-22');d.setDate(d.getDate()-(90-i));
+  c.setAttribute('data-tip',`${d.toLocaleDateString()}: ${v} incident${v!==1?'s':''}`);
+  c.title=`${d.toLocaleDateString()}: ${v} incident${v!==1?'s':''}`;
+  hm.appendChild(c);
+}
+
+// ─── TREND CHART ─────────────────────────────────────────────────────────────
+new Chart(document.getElementById('trendChart'),{
+  type:'line',
+  data:{labels:L90,datasets:[
+    {label:'Quality',data:rand(75,95,90),borderColor:'#3b82f6',tension:.4,pointRadius:0,borderWidth:2,fill:false},
+    {label:'Risk',data:rand(40,75,90),borderColor:'#f59e0b',tension:.4,pointRadius:0,borderWidth:2,fill:false},
+    {label:'Compliance',data:rand(80,95,90),borderColor:'#22c55e',tension:.4,pointRadius:0,borderWidth:2,fill:false}
+  ]},
+  options:{...P,scales:{x:{ticks:{maxTicksLimit:9}},y:{min:30,max:100}}}
+});
+
+// ─── STABILITY ───────────────────────────────────────────────────────────────
+new Chart(document.getElementById('stabilityChart'),{
+  type:'bar',
+  data:{labels:days(12).filter((_,i)=>i%1===0).slice(0,12),
+    datasets:[{label:'Stability Index',data:rand(60,90,12),
+      backgroundColor:ctx=>ctx.parsed.y>=80?'rgba(34,197,94,.5)':ctx.parsed.y>=70?'rgba(245,158,11,.5)':'rgba(239,68,68,.5)',
+      borderRadius:6}]},
+  options:{...P,scales:{y:{min:0,max:100}}}
+});
+
+// ─── DEFECT DENSITY ──────────────────────────────────────────────────────────
+new Chart(document.getElementById('defectChart'),{
+  type:'bar',
+  data:{labels:['apps/api','apps/bot','libs/database','apps/admin','libs/auth','libs/core'],
+    datasets:[{label:'Defects/KLOC',data:[4.2,2.8,6.1,1.2,2.1,1.8],
+      backgroundColor:['rgba(249,115,22,.7)','rgba(245,158,11,.7)','rgba(239,68,68,.7)',
+        'rgba(34,197,94,.7)','rgba(245,158,11,.7)','rgba(59,130,246,.7)'],borderRadius:6}]},
+  options:{...P,indexAxis:'y',scales:{x:{beginAtZero:true}}}
+});
+
+// ─── CHAOS ───────────────────────────────────────────────────────────────────
+new Chart(document.getElementById('chaosChart'),{
+  type:'doughnut',
+  data:{labels:['Hypothesis Met','Partial','Failed'],
+    datasets:[{data:[11,2,3],
+      backgroundColor:['rgba(34,197,94,.7)','rgba(245,158,11,.7)','rgba(239,68,68,.7)'],borderWidth:2,
+      borderColor:'#111827'}]},
+  options:{...P,cutout:'65%'}
+});
+
+// ─── LTC BREAKDOWN ───────────────────────────────────────────────────────────
+new Chart(document.getElementById('ltcBreakdownChart'),{
+  type:'bar',
+  data:{labels:['Code Review','CI Pipeline','Staging Validation','Prod Gate'],
+    datasets:[{label:'Median hrs',data:[1.8,0.5,1.1,0.8],backgroundColor:'rgba(139,92,246,.6)',borderRadius:6}]},
+  options:{...P,indexAxis:'y'}
+});
+
+// ─── REGRESSION ──────────────────────────────────────────────────────────────
+new Chart(document.getElementById('regressionChart'),{
+  type:'line',
+  data:{labels:L90,datasets:[
+    {label:'Regression Rate %',data:rand(5,25,90),fill:true,backgroundColor:'rgba(239,68,68,.08)',
+     borderColor:'#ef4444',borderWidth:2,tension:.4,pointRadius:1},
+    {label:'Threshold 20%',data:Array(90).fill(20),borderColor:'#f59e0b',
+     borderWidth:1,borderDash:[4,4],pointRadius:0,fill:false}
+  ]},
+  options:{...P,scales:{x:{ticks:{maxTicksLimit:9}},y:{ticks:{callback:v=>v+'%'}}}}
+});
+
+// ─── ALERT VOLUME ────────────────────────────────────────────────────────────
+new Chart(document.getElementById('alertVolumeChart'),{
+  type:'bar',
+  data:{labels:days(30),datasets:[
+    {label:'P0',data:rand(0,1,30).map(v=>Math.round(v)),backgroundColor:'rgba(239,68,68,.7)',borderRadius:4},
+    {label:'P1',data:rand(0,2,30).map(v=>Math.round(v)),backgroundColor:'rgba(249,115,22,.7)',borderRadius:4},
+    {label:'P2',data:rand(0,3,30).map(v=>Math.round(v)),backgroundColor:'rgba(245,158,11,.7)',borderRadius:4}
+  ]},
+  options:{...P,scales:{x:{stacked:true,ticks:{maxTicksLimit:8}},y:{stacked:true,beginAtZero:true}}}
+});
+</script>
+</body>
+</html>
