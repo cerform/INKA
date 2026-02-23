@@ -1,5 +1,5 @@
 from aiogram import Bot
-from apps.bot.utils.i18n import gettext
+from packages.core.utils.i18n import gettext # Correcting path if needed
 
 class NotificationService:
     def __init__(self, bot: Bot):
@@ -21,5 +21,25 @@ class NotificationService:
             locale,
             client=booking_details["client"],
             time=booking_details["time"]
+        )
+        await self.bot.send_message(admin_telegram_id, message)
+
+    async def send_low_stock_notification(
+        self, 
+        admin_telegram_id: int, 
+        locale: str, 
+        material_name: str, 
+        current_quantity: float, 
+        unit: str
+    ):
+        """
+        Notifies the admin that a material has reached or dropped below threshold.
+        """
+        message = gettext(
+            "notification-low-stock",
+            locale,
+            material=material_name,
+            quantity=current_quantity,
+            unit=unit
         )
         await self.bot.send_message(admin_telegram_id, message)

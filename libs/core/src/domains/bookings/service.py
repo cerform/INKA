@@ -1,5 +1,5 @@
 from typing import Any
-from packages.core.domains.bookings.models import Booking
+from packages.core.models.booking import Booking
 from packages.core.domains.bookings.conflict import has_conflict
 from packages.core.domains.audit.service import audit_service
 

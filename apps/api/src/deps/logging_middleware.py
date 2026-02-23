@@ -1,6 +1,6 @@
 import uuid
 from starlette.middleware.base import BaseHTTPMiddleware
-from packages.core.logging import request_id_ctx_var, actor_id_ctx_var
+from packages.core.logger_setup import request_id_ctx_var, actor_id_ctx_var
 
 class LoggingMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request, call_next):

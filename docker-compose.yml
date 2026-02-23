@@ -41,6 +41,7 @@ services:
       REDIS_URL: redis://redis:6379/0
       ENVIRONMENT: development
       LOG_LEVEL: DEBUG
+      PYTHONPATH: /app:/app/apps/api/src
     volumes:
       - ./apps/api:/app/apps/api
       - ./libs:/app/libs
@@ -49,7 +50,7 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
-    command: uvicorn apps.api.src.main:app --host 0.0.0.0 --port 8000 --reload
+    command: uvicorn apps.api.src.app.main:app --host 0.0.0.0 --port 8000 --reload
 
   bot:
     build:

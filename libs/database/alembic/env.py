@@ -9,7 +9,10 @@ from alembic import context
 
 # Import the settings and Base to access metadata
 from packages.core.config import settings
-from packages.db.base import Base
+from packages.db.base_class import Base
+
+# Ensure all models are imported so they are registered on Base.metadata
+import packages.core.models
 
 config = context.config
 
@@ -39,7 +42,7 @@ def do_run_migrations(connection: Connection) -> None:
 
 async def run_migrations_online() -> None:
     """Run migrations in 'online' mode."""
-    configuration = config.get_section(config.config_section_name)
+    configuration = config.get_section(config.config_ini_section)
     configuration["sqlalchemy.url"] = settings.SQLALCHEMY_DATABASE_URI
 
     connectable = async_engine_from_config(

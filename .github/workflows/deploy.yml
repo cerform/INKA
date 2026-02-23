@@ -6,9 +6,9 @@ on:
   workflow_dispatch:
 
 env:
-  PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }}
-  REGION: us-central1
-  ARTIFACT_REPO: inka-repo
+  PROJECT_ID: "${{ secrets.GCP_PROJECT_ID }}"
+  REGION: "us-central1"
+  ARTIFACT_REPO: "inka-repo"
 
 jobs:
   build-and-deploy:
@@ -24,31 +24,31 @@ jobs:
       - name: Google Auth
         uses: google-github-actions/auth@v2
         with:
-          credentials_json: '${{ secrets.GCP_CREDENTIALS }}'
+          credentials_json: "${{ secrets.GCP_CREDENTIALS }}"
 
       - name: Set up Cloud SDK
         uses: google-github-actions/setup-gcloud@v1
 
       - name: Configure Docker
-        run: gcloud auth configure-docker ${{ env.REGION }}-docker.pkg.dev
+        run: gcloud auth configure-docker "${{ env.REGION }}-docker.pkg.dev"
 
       # Build & Push API
       - name: Build API
-        run: docker build -t ${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.ARTIFACT_REPO }}/api:${{ github.sha }} -f apps/api/Dockerfile .
+        run: docker build -t "${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.ARTIFACT_REPO }}/api:${{ github.sha }}" -f apps/api/Dockerfile .
       - name: Push API
-        run: docker push ${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.ARTIFACT_REPO }}/api:${{ github.sha }}
+        run: docker push "${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.ARTIFACT_REPO }}/api:${{ github.sha }}"
 
       # Build & Push Bot
       - name: Build Bot
-        run: docker build -t ${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.ARTIFACT_REPO }}/bot:${{ github.sha }} -f apps/bot/Dockerfile .
+        run: docker build -t "${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.ARTIFACT_REPO }}/bot:${{ github.sha }}" -f apps/bot/Dockerfile .
       - name: Push Bot
-        run: docker push ${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.ARTIFACT_REPO }}/bot:${{ github.sha }}
+        run: docker push "${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.ARTIFACT_REPO }}/bot:${{ github.sha }}"
 
       # Build & Push Admin
       - name: Build Admin
-        run: docker build -t ${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.ARTIFACT_REPO }}/admin:${{ github.sha }} -f apps/admin/Dockerfile .
+        run: docker build -t "${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.ARTIFACT_REPO }}/admin:${{ github.sha }}" -f apps/admin/Dockerfile .
       - name: Push Admin
-        run: docker push ${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.ARTIFACT_REPO }}/admin:${{ github.sha }}
+        run: docker push "${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.ARTIFACT_REPO }}/admin:${{ github.sha }}"
 
       # Deploy API
       - name: Deploy API

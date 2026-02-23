@@ -13,7 +13,7 @@ import logging
 from datetime import datetime, timedelta
 from typing import Optional
 
-from libs.chaos.catalog import ExperimentDefinition
+from packages.chaos.catalog import ExperimentDefinition
 
 logger = logging.getLogger(__name__)
 

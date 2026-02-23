@@ -1,0 +1,16 @@
+steps:
+  - name: 'gcr.io/cloud-builders/docker'
+    args: 
+      - 'build'
+      - '--no-cache'
+      - '-t'
+      - 'gcr.io/$PROJECT_ID/inka-bot:latest'
+      - '-f'
+      - 'apps/bot/Dockerfile'
+      - '.'
+
+images:
+  - 'gcr.io/$PROJECT_ID/inka-bot:latest'
+
+options:
+  machineType: 'N1_HIGHCPU_8'

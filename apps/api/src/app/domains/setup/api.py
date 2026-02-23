@@ -1,17 +1,249 @@
-from fastapi import APIRouter, HTTPException, Depends
-from pydantic import BaseModel, EmailStr, validator
+from fastapi import APIRouter, HTTPException, Depends, Header, status
+from pydantic import BaseModel, EmailStr, validator, Field
 from sqlalchemy.orm import Session
 from passlib.context import CryptContext
 import os
 import subprocess
 from pathlib import Path
+from typing import Optional, List
+import uuid
+import secrets
 
-from apps.api.src.app.deps.auth import get_db
-from libs.core.src.domains.auth.models import User
-from libs.database.src.session import engine
+from app.deps.auth import get_db
+from packages.core.models import User
+from packages.db.session import engine
+from app.domains.setup.models import SalonSetup, SalonWorkSchedule
 
-router = APIRouter()
+router = APIRouter(prefix="/api/v1/setup", tags=["Setup"])
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+
+
+# ============ Salon Setup Schemas ============
+
+class WorkScheduleCreate(BaseModel):
+    day_of_week: str
+    is_working: bool = True
+    start_time: Optional[str] = "09:00"
+    end_time: Optional[str] = "21:00"
+
+
+class SalonSetupCreate(BaseModel):
+    salon_name: str = Field(..., min_length=1, max_length=255)
+    specialization: Optional[str] = None
+    telegram_bot_token: Optional[str] = None
+    work_start_time: str = "09:00"
+    work_end_time: str = "21:00"
+    timezone: str = "UTC"
+    work_schedule: Optional[List[WorkScheduleCreate]] = None
+
+
+class SalonSetupUpdate(BaseModel):
+    salon_name: Optional[str] = None
+    specialization: Optional[str] = None
+    telegram_bot_token: Optional[str] = None
+    work_start_time: Optional[str] = None
+    work_end_time: Optional[str] = None
+    timezone: Optional[str] = None
+    is_completed: Optional[bool] = None
+
+
+class WorkScheduleRead(WorkScheduleCreate):
+    id: str
+    setup_id: str
+
+
+class SalonSetupRead(BaseModel):
+    id: str
+    admin_id: str
+    salon_name: str
+    specialization: Optional[str]
+    api_key: str
+    work_start_time: str
+    work_end_time: str
+    timezone: str
+    is_completed: bool
+    is_active: bool
+    work_schedule: List[WorkScheduleRead] = []
+
+
+class SetupResponse(BaseModel):
+    status: str
+    message: str
+    data: Optional[SalonSetupRead] = None
+
+
+# ============ Salon Setup Endpoints ============
+
+def generate_api_key():
+    """Generate a secure API key"""
+    return f"sk_{secrets.token_urlsafe(32)}"
+
+
+@router.post("/salon-init", response_model=SetupResponse, status_code=status.HTTP_201_CREATED)
+async def initialize_salon_setup(
+    payload: SalonSetupCreate,
+    db: Session = Depends(get_db),
+    authorization: str = Header(None)
+):
+    """
+    Initialize salon setup for new admin - Landing page endpoint
+    """
+    # Get user ID from token (simplified)
+    admin_id = authorization.split()[-1] if authorization else str(uuid.uuid4())
+    
+    # Check if already has setup
+    existing = db.query(SalonSetup).filter(SalonSetup.admin_id == admin_id).first()
+    if existing and existing.is_completed:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Salon setup already completed"
+        )
+    
+    # Create setup record
+    setup_id = str(uuid.uuid4())
+    api_key = generate_api_key()
+    
+    salon_setup = SalonSetup(
+        id=setup_id,
+        admin_id=admin_id,
+        salon_name=payload.salon_name,
+        specialization=payload.specialization,
+        telegram_bot_token=payload.telegram_bot_token,
+        api_key=api_key,
+        work_start_time=payload.work_start_time,
+        work_end_time=payload.work_end_time,
+        timezone=payload.timezone,
+        is_completed=bool(payload.work_schedule)
+    )
+    
+    db.add(salon_setup)
+    db.flush()
+    
+    # Create work schedule if provided
+    if payload.work_schedule:
+        for schedule in payload.work_schedule:
+            work_schedule = SalonWorkSchedule(
+                id=str(uuid.uuid4()),
+                setup_id=setup_id,
+                day_of_week=schedule.day_of_week,
+                is_working=schedule.is_working,
+                start_time=schedule.start_time,
+                end_time=schedule.end_time
+            )
+            db.add(work_schedule)
+    
+    db.commit()
+    
+    return SetupResponse(
+        status="success",
+        message="Salon setup initialized successfully",
+        data=salon_setup
+    )
+
+
+@router.get("/salon-status", response_model=SetupResponse)
+async def get_setup_status(
+    db: Session = Depends(get_db),
+    authorization: str = Header(None)
+):
+    """Get current salon setup status"""
+    admin_id = authorization.split()[-1] if authorization else None
+    
+    if not admin_id:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Unauthorized"
+        )
+    
+    setup = db.query(SalonSetup).filter(SalonSetup.admin_id == admin_id).first()
+    
+    if not setup:
+        return SetupResponse(
+            status="not_started",
+            message="Setup not started yet"
+        )
+    
+    return SetupResponse(
+        status="in_progress" if not setup.is_completed else "completed",
+        message="Setup status retrieved",
+        data=setup
+    )
+
+
+@router.put("/salon-update", response_model=SetupResponse)
+async def update_setup(
+    payload: SalonSetupUpdate,
+    db: Session = Depends(get_db),
+    authorization: str = Header(None)
+):
+    """Update salon setup"""
+    admin_id = authorization.split()[-1] if authorization else None
+    
+    if not admin_id:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Unauthorized"
+        )
+    
+    setup = db.query(SalonSetup).filter(SalonSetup.admin_id == admin_id).first()
+    
+    if not setup:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Setup not found"
+        )
+    
+    # Update fields
+    if payload.salon_name:
+        setup.salon_name = payload.salon_name
+    if payload.specialization:
+        setup.specialization = payload.specialization
+    if payload.telegram_bot_token:
+        setup.telegram_bot_token = payload.telegram_bot_token
+    if payload.work_start_time:
+        setup.work_start_time = payload.work_start_time
+    if payload.work_end_time:
+        setup.work_end_time = payload.work_end_time
+    if payload.timezone:
+        setup.timezone = payload.timezone
+    if payload.is_completed is not None:
+        setup.is_completed = payload.is_completed
+    
+    db.commit()
+    
+    return SetupResponse(
+        status="success",
+        message="Setup updated successfully",
+        data=setup
+    )
+
+
+@router.get("/api-key", response_model=dict)
+async def get_api_key(
+    db: Session = Depends(get_db),
+    authorization: str = Header(None)
+):
+    """Get salon API key"""
+    admin_id = authorization.split()[-1] if authorization else None
+    
+    if not admin_id:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Unauthorized"
+        )
+    
+    setup = db.query(SalonSetup).filter(SalonSetup.admin_id == admin_id).first()
+    
+    if not setup:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Setup not found"
+        )
+    
+    return {"api_key": setup.api_key}
+
+
+# ============ System Setup (Old Endpoints) ============
 
 class SetupConfig(BaseModel):
     botToken: str
@@ -54,7 +286,7 @@ def check_if_setup_completed():
     
     # Also check if admin user exists
     try:
-        from libs.database.src.session import SessionLocal
+        from packages.db.session import SessionLocal
         db = SessionLocal()
         admin_exists = db.query(User).filter(User.role == 'admin').first()
         db.close()

@@ -1,3 +1,134 @@
+
+---
+
+## Appendix: Implementation Status
+
+This specification has been **fully implemented** with the following components:
+
+### Core Engine
+- ✅ [Quality Score Algorithm](../libs/quality/src/quality_score.py)
+- ✅ [Data Source Layer](../libs/quality/src/data_source.py)
+- ✅ [Unit Tests](../libs/quality/tests/test_quality_score.py)
+
+### CI/CD Integration
+- ✅ [GitHub Actions Workflow](.github/workflows/quality-gate.yml)
+- ✅ [Cloud Build Configuration](../cloudbuild-quality-gate.yaml)
+- ✅ [Quality Gate Script](../scripts/quality_gate.py)
+
+### User Interfaces
+- ✅ [Telegram Bot Handler](../apps/bot/src/bot/handlers/quality_handler.py)
+- ✅ [Sample Quality Registry](../quality_registry.json)
+
+### Documentation
+- ✅ [Complete Implementation Guide](QUALITY_SCORE_IMPLEMENTATION.md)
+- ✅ [Quick Start Guide](QUALITY_SCORE_QUICK_START.md)
+- ✅ [Deployment Governor Contract](DEPLOYMENT_GOVERNOR.md)
+
+### Usage
+
+**Telegram Bot:**
+```
+/release quality 1.3.0
+/release quality latest
+```
+
+**CI/CD (GitHub Actions):**
+- Automatically runs on push/PR
+- Blocks deployments if score < 80
+- Reports score in PR comments
+
+**Local Testing:**
+```bash
+export COVERAGE_PCT=92.0
+export GITHUB_SHA=$(git rev-parse HEAD)
+python scripts/quality_gate.py --target prod
+```
+
+---
+
+## Appendix: Key Decisions
+
+### Why Weighted Dimensions?
+Each dimension captures a different aspect of quality. Weights reflect organizational priorities:
+- **High weight (20%)**: Coverage & Defect Status → Core reliability
+- **Medium weight (15%)**: Security & Compliance → Risk mitigation
+- **Lower weight (10%)**: Performance & Churn → Operational concerns
+
+### Why Hard-Zero Rules?
+S1 bugs and CI failures are non-negotiable blockers. A single critical issue shouldn't be "masked" by high coverage. This prevents false confidence.
+
+### Why Capped Penalties?
+Multiple vulns shouldn't sink a score indefinitely. Caps prevent "death spiral" where one bad metric ruins deployment. Encourages fixing the worst issues first.
+
+### Why 90/80 Thresholds?
+- **90:** Very confident in production readiness. High bar, but achievable.
+- **80:** Good enough for staging. Fixes can be tested before prod push.
+- **< 80:** Major issues that must be fixed first.
+
+---
+
+## Appendix: Extending the System
+
+### Adding a New Dimension
+
+1. **Add weight** in `WEIGHTS` dict (total must = 1.0)
+2. **Add scoring function** `_score_<dimension>()`
+3. **Add to QualityInput** dataclass
+4. **Update engine.compute()** to calculate raw score
+5. **Add tests** in test_quality_score.py
+6. **Update documentation**
+
+Example: Add "Documentation Coverage"
+```python
+WEIGHTS = {
+  ...existing...
+  "documentation": 0.05,  # New
+}
+
+def _score_documentation(percent: float) -> float:
+  return max(0.0, min(100.0, percent * 2.0))  # 0-50% = 0 pts, 50-100% = 100 pts
+```
+
+### Adding a New Penalty
+
+1. **Define trigger** and penalty amount
+2. **Add check** in `engine.compute()` in penalties section
+3. **Append to penalties list** with reason string
+4. **Add test** for the penalty
+5. **Update documentation**
+
+Example: Penalty for outdated dependencies
+```python
+if num_outdated_deps > 10:
+  penalties.append({"reason": f"Outdated deps: {num_outdated_deps}", "pts": 15})
+  penalty_pts += 15
+```
+
+### Integrating Real Defect Tracker
+
+Replace stub in `libs/quality/src/data_source.py`:
+
+```python
+async def _fetch_from_defect_api(self, version: str) -> Optional[dict]:
+  """Fetch from Jira/Linear/etc."""
+  async with aiohttp.ClientSession() as session:
+    url = f"{self._defect_api_url}/api/releases/{version}"
+    headers = {"Authorization": f"Bearer {self._defect_api_token}"}
+    async with session.get(url, headers=headers) as resp:
+      if resp.status == 200:
+        return await resp.json()
+  return None
+```
+
+---
+
+## References
+
+- [Implementation Guide](QUALITY_SCORE_IMPLEMENTATION.md) — Complete technical guide
+- [Quick Start](QUALITY_SCORE_QUICK_START.md) — Get started in 5 minutes
+- [Deployment Governor](DEPLOYMENT_GOVERNOR.md) — CI/Deployment integration
+- [Source Code](../libs/quality/) — Algorithm implementation
+- [Tests](../libs/quality/tests/) — Validation & examples
 # Quality Score Agent — INKA Admin
 
 > **Role:** Quality Score Agent | **System:** INKA Admin | **Purpose:** Evaluate release quality before deployment

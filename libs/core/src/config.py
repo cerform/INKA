@@ -4,6 +4,9 @@ from pydantic import AnyHttpUrl, PostgresDsn, RedisDsn, validator
 
 class Settings(BaseSettings):
     PROJECT_NAME: str = "INKA Admin"
+    VERSION: str = "0.1.0"
+    ENVIRONMENT: str = "dev"
+    LOG_LEVEL: str = "INFO"
     API_V1_STR: str = "/api/v1"
     SECRET_KEY: str = "change-me-in-production"
 
@@ -52,6 +55,9 @@ class Settings(BaseSettings):
     # Telegram
     TELEGRAM_BOT_TOKEN: str = ""
     TELEGRAM_WEBHOOK_URL: AnyHttpUrl | None = None
+
+    # LLM
+    OPENAI_API_KEY: str = ""
 
     model_config = SettingsConfigDict(
         env_file=".env",

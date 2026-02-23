@@ -15,10 +15,10 @@ on:
         required: false
 
 env:
-  PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }}
-  REGION: europe-west1
-  ARTIFACT_REPO: inka-repo
-  ENVIRONMENT: prod
+  PROJECT_ID: "${{ secrets.GCP_PROJECT_ID }}"
+  REGION: "europe-west1"
+  ARTIFACT_REPO: "inka-repo"
+  ENVIRONMENT: "prod"
 
 jobs:
   # ─────────────────────────────────────────
@@ -40,10 +40,10 @@ jobs:
 
       - name: Check stage deployment stability
         env:
-          DATABASE_URL: ${{ secrets.STAGE_DATABASE_URL }}
-          INPUT_VERSION: ${{ github.event.inputs.version }}
-          SKIP_CHECK: ${{ github.event.inputs.skip_24h_check }}
-          SKIP_JUSTIFICATION: ${{ github.event.inputs.skip_justification }}
+          DATABASE_URL: "${{ secrets.STAGE_DATABASE_URL }}"
+          INPUT_VERSION: "${{ github.event.inputs.version }}"
+          SKIP_CHECK: "${{ github.event.inputs.skip_24h_check }}"
+          SKIP_JUSTIFICATION: "${{ github.event.inputs.skip_justification }}"
         run: python scripts/check_stage_stability.py
 
   # ─────────────────────────────────────────
@@ -66,9 +66,9 @@ jobs:
 
       - name: Run deployment gate (strict prod)
         env:
-          DEFECT_API_URL: ${{ secrets.DEFECT_API_URL }}
-          DEFECT_API_KEY: ${{ secrets.DEFECT_API_KEY }}
-          TARGET_ENV: prod
+          DEFECT_API_URL: "${{ secrets.DEFECT_API_URL }}"
+          DEFECT_API_KEY: "${{ secrets.DEFECT_API_KEY }}"
+          TARGET_ENV: "prod"
         run: python scripts/gate_check.py --env=prod --strict
 
   # ─────────────────────────────────────────
@@ -108,7 +108,8 @@ jobs:
     name: "Production Release Approval"
     runs-on: ubuntu-latest
     needs: [tag-verification]
-    environment: production    # GitHub Environment: requires release_manager approval
+    environment: 
+      name: "production"    # GitHub Environment: requires release_manager approval
     steps:
       - name: Approval recorded
         run: echo "✅ Production deployment approved by ${{ github.actor }}"
@@ -120,13 +121,15 @@ jobs:
     name: "Canary Deploy (10%)"
     runs-on: ubuntu-latest
     needs: [approval]
+    outputs:
+      canary_revision: ${{ steps.deploy_api.outputs.canary_revision }}
     steps:
       - uses: actions/checkout@v4
 
       - name: Google Auth
         uses: google-github-actions/auth@v2
         with:
-          credentials_json: ${{ secrets.GCP_CREDENTIALS_PROD }}
+          credentials_json: "${{ secrets.GCP_CREDENTIALS_PROD }}"
 
       - name: Get version (without v prefix)
         id: get_version
@@ -141,10 +144,13 @@ jobs:
         id: deploy_api
         run: |
           gcloud run deploy inka-api \
-            --image=${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.ARTIFACT_REPO }}/api:${{ steps.get_version.outputs.version }}-stage \
+            --image=${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.ARTIFACT_REPO }}/api:${{ steps.get_version.outputs.version }} \
             --region=${{ env.REGION }} \
             --tag=canary \
             --no-traffic \
+            --vpc-connector=inka-connector \
+            --set-secrets="DATABASE_URL=inka-database-url:latest,SQLALCHEMY_DATABASE_URI=inka-database-url:latest,REDIS_URL=inka-redis-url:latest" \
+            --set-env-vars="ENVIRONMENT=production" \
             --project=${{ env.PROJECT_ID }}
 
           # Shift 10% to canary
@@ -153,38 +159,54 @@ jobs:
             --region=${{ env.REGION }} \
             --project=${{ env.PROJECT_ID }}
 
-          REVISION=$(gcloud run services describe inka-api --region=${{ env.REGION }} --format='value(status.traffic[0].revisionName)' --project=${{ env.PROJECT_ID }})
+          REVISION=$(gcloud run revisions list --service=inka-api --region=${{ env.REGION }} --filter="tags=canary" --format='value(name)' --project=${{ env.PROJECT_ID }} | head -n 1)
           echo "canary_revision=${REVISION}" >> $GITHUB_OUTPUT
 
       - name: Deploy Bot canary
         run: |
           gcloud run deploy inka-bot \
-            --image=${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.ARTIFACT_REPO }}/bot:${{ steps.get_version.outputs.version }}-stage \
+            --image=${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.ARTIFACT_REPO }}/bot:${{ steps.get_version.outputs.version }} \
             --region=${{ env.REGION }} \
             --tag=canary \
             --no-traffic \
+            --vpc-connector=inka-connector \
+            --set-secrets="SQLALCHEMY_DATABASE_URI=inka-database-url:latest,REDIS_URL=inka-redis-url:latest,TELEGRAM_BOT_TOKEN=inka-bot-token:latest" \
+            --set-env-vars="ENVIRONMENT=production" \
             --project=${{ env.PROJECT_ID }}
           gcloud run services update-traffic inka-bot \
             --to-tags=canary=10 \
             --region=${{ env.REGION }} \
             --project=${{ env.PROJECT_ID }}
 
+      - name: Deploy Admin canary
+        run: |
+          gcloud run deploy inka-admin \
+            --image=${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.ARTIFACT_REPO }}/admin:${{ steps.get_version.outputs.version }}-stage \
+            --region=${{ env.REGION }} \
+            --tag=canary \
+            --no-traffic \
+            --project=${{ env.PROJECT_ID }}
+          gcloud run services update-traffic inka-admin \
+            --to-tags=canary=10 \
+            --region=${{ env.REGION }} \
+            --project=${{ env.PROJECT_ID }}
+
       - name: Register canary in release_registry
         env:
-          DATABASE_URL: ${{ secrets.PROD_DATABASE_URL }}
-          VERSION: ${{ steps.get_version.outputs.version }}
-          GIT_SHA: ${{ github.sha }}
-          DEPLOYED_BY: ${{ github.actor }}
-          ENVIRONMENT: prod
+          DATABASE_URL: "${{ secrets.PROD_DATABASE_URL }}"
+          VERSION: "${{ steps.get_version.outputs.version }}"
+          GIT_SHA: "${{ github.sha }}"
+          DEPLOYED_BY: "${{ github.actor }}"
+          ENVIRONMENT: "prod"
           IS_CANARY: "true"
           CANARY_PERCENT: "10"
-          ROLLBACK_REVISION: ${{ steps.deploy_api.outputs.canary_revision }}
+          ROLLBACK_REVISION: "${{ steps.deploy_api.outputs.canary_revision }}"
         run: python scripts/register_release.py
 
       - name: Notify canary deployed
         env:
-          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_ADMIN_BOT_TOKEN }}
-          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_RELEASE_CHAT_ID }}
+          TELEGRAM_BOT_TOKEN: "${{ secrets.TELEGRAM_ADMIN_BOT_TOKEN }}"
+          TELEGRAM_CHAT_ID: "${{ secrets.TELEGRAM_RELEASE_CHAT_ID }}"
           VERSION: ${{ steps.get_version.outputs.version }}
         run: |
           curl -s -X POST "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage" \
@@ -202,6 +224,11 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Google Auth
+        uses: google-github-actions/auth@v2
+        with:
+          credentials_json: "${{ secrets.GCP_CREDENTIALS_PROD }}"
+
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
@@ -212,12 +239,15 @@ jobs:
 
       - name: Monitor canary health for 30 minutes
         env:
-          GCP_PROJECT_ID: ${{ env.PROJECT_ID }}
-          API_URL: ${{ secrets.PROD_API_URL }}
-          GOOGLE_APPLICATION_CREDENTIALS: ${{ secrets.GCP_CREDENTIALS_PROD }}
-          ERROR_RATE_THRESHOLD: "0.01"     # 1%
-          LATENCY_P95_THRESHOLD: "2000"    # 2000ms
-        run: python scripts/monitor_canary.py --duration=1800 --interval=60
+          CANARY_REVISION: "${{ needs.canary-deploy.outputs.canary_revision }}"
+        run: |
+          python scripts/monitor_canary.py \
+            --project=${{ env.PROJECT_ID }} \
+            --service=inka-api \
+            --revision=${{ env.CANARY_REVISION }} \
+            --duration=1800 \
+            --interval=60 \
+            --error-threshold=0.01
 
   # ─────────────────────────────────────────
   # FULL PROMOTION (100% traffic)
@@ -227,10 +257,19 @@ jobs:
     runs-on: ubuntu-latest
     needs: [canary-health-check]
     steps:
+      - uses: actions/checkout@v4
+
       - name: Google Auth
         uses: google-github-actions/auth@v2
         with:
-          credentials_json: ${{ secrets.GCP_CREDENTIALS_PROD }}
+          credentials_json: "${{ secrets.GCP_CREDENTIALS_PROD }}"
+
+      - name: Run DB migrations on Prod (BEFORE promotion)
+        env:
+          DATABASE_URL: "${{ secrets.PROD_DATABASE_URL }}"
+        run: |
+          pip install alembic psycopg2-binary
+          alembic -c libs/database/alembic.ini upgrade head
 
       - name: Shift all traffic to new revision
         run: |
@@ -249,7 +288,7 @@ jobs:
 
       - name: Update release_registry to DEPLOYED (100%)
         env:
-          DATABASE_URL: ${{ secrets.PROD_DATABASE_URL }}
+          DATABASE_URL: "${{ secrets.PROD_DATABASE_URL }}"
           VERSION: ${{ github.event.inputs.version }}
           ENVIRONMENT: prod
         run: |
@@ -259,15 +298,10 @@ jobs:
             --status=DEPLOYED \
             --canary-percent=100
 
-      - name: Run DB migrations on Prod
-        env:
-          DATABASE_URL: ${{ secrets.PROD_DATABASE_URL }}
-        run: alembic -c libs/database/alembic.ini upgrade head
-
       - name: Notify production deployed
         env:
-          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_ADMIN_BOT_TOKEN }}
-          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_RELEASE_CHAT_ID }}
+          TELEGRAM_BOT_TOKEN: "${{ secrets.TELEGRAM_ADMIN_BOT_TOKEN }}"
+          TELEGRAM_CHAT_ID: "${{ secrets.TELEGRAM_RELEASE_CHAT_ID }}"
           VERSION: ${{ github.event.inputs.version }}
         run: |
           curl -s -X POST "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage" \

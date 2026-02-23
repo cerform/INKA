@@ -3,29 +3,38 @@ FROM node:20-slim AS builder
 
 WORKDIR /app
 
-# Copy package files
-COPY package.json package-lock.json ./
-# Copy workspace config if any (assuming standalone for now based on package.json view)
-# If root package.json exists, we might need it, but let's assume monorepo needs distinct install for now or copy all.
-# Given complexity, let's copy everything needed for admin. (Reviewing structure again might be needed but let's start simple)
-COPY apps/admin/package.json ./apps/admin/
+# Copy root workspace configurations
+COPY package*.json ./
+COPY apps/admin/package*.json ./apps/admin/
 
-# Install dependencies
-# We need to install from root if it's a monorepo workspace.
-# For now, let's assume we can build admin in isolation or copy root context.
-# Best practice for monorepo Dockerfile: Context is Root.
-COPY package.json package-lock.json ./
-COPY apps/admin ./apps/admin
+# Install dependencies (handles workspaces)
+RUN npm install
 
-RUN npm ci
+# Copy source code and libs
+COPY apps/admin/ ./apps/admin/
+# If admin depends on any libs, copy them here
+# COPY libs/ ./libs/ 
+
 WORKDIR /app/apps/admin
+
+# Build-time API URL for Vite
+ARG VITE_API_URL
+ENV VITE_API_URL=${VITE_API_URL}
+
+# Build the app
 RUN npm run build
 
-# Runtime Stage
-FROM nginx:alpine
+# Runtime Stage - using unprivileged nginx for security
+FROM nginxinc/nginx-unprivileged:alpine
 
+# Copy build artifacts
 COPY --from=builder /app/apps/admin/dist /usr/share/nginx/html
 COPY apps/admin/nginx.conf /etc/nginx/conf.d/default.conf
 
 EXPOSE 8080
+
+# Healthcheck
+HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
+    CMD curl -f http://localhost:8080/ || exit 1
+
 CMD ["nginx", "-g", "daemon off;"]

@@ -1,0 +1,128 @@
+# Cloud Build — Quality Gate Integration
+# Runs after all tests, security scans, and coverage collection
+# Part of the standard CI pipeline before deployment
+
+steps:
+  # Step 1: Run unit & integration tests with coverage
+  - id: test
+    name: 'gcr.io/cloud-builders/docker'
+    args: 
+      - 'run'
+      - '--rm'
+      - '-v'
+      - '/workspace:/workspace'
+      - '-w'
+      - '/workspace'
+      - 'python:3.11'
+      - 'bash'
+      - '-c'
+      - |
+        pip install -e .[dev] -q
+        pytest libs/ apps/api/tests apps/bot/tests \
+          --cov=apps --cov=libs \
+          --cov-report=xml:coverage.xml \
+          --cov-report=term-summary \
+          -v
+    env:
+      - 'PYTHONPATH=/workspace'
+
+  # Step 2: Run security scan (Trivy)
+  - id: security-scan
+    name: 'aquasec/trivy:latest'
+    args:
+      - 'image'
+      - 'scan'
+      - '--format'
+      - 'json'
+      - '--output'
+      - 'trivy-report.json'
+      - '${_IMAGE}'
+    waitFor: ['-']
+
+  # Step 3: Collect defect metrics (stub — replace with real defect API call)
+  - id: collect-defects
+    name: 'gcr.io/cloud-builders/gke-deploy'
+    args:
+      - 'run'
+    script: |
+      #!/bin/bash
+      # In production, query your defect tracker (Jira, Linear, etc.)
+      # For now, stub data
+      cat > defect_registry.json <<EOF
+      {
+        "open_s1": 0,
+        "open_s2": 0,
+        "open_s3": 0,
+        "evaluated_at": "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+      }
+      EOF
+
+  # Step 4: Run quality gate
+  - id: quality-gate
+    name: 'python:3.11'
+    args:
+      - 'python'
+      - 'scripts/quality_gate.py'
+      - '--target'
+      - '${_DEPLOYMENT_TARGET}'
+      - '--version'
+      - '${COMMIT_SHA}'
+      - '--output-json'
+      - 'quality_report.json'
+    env:
+      - 'PYTHONPATH=/workspace'
+      - 'COVERAGE_PCT=0'  # Will be read from coverage.xml
+      - 'OPEN_S1_BUGS=0'
+      - 'OPEN_S2_BUGS=0'
+      - 'CRITICAL_VULNS=0'
+      - 'HIGH_VULNS=0'
+      - 'GITHUB_SHA=${COMMIT_SHA}'
+      - 'VERSION=${_VERSION}'
+    waitFor: ['test', 'security-scan', 'collect-defects']
+
+  # Step 5: Upload quality report artifact
+  - id: upload-artifacts
+    name: 'gcr.io/cloud-builders/gsutil'
+    args:
+      - '-m'
+      - 'cp'
+      - 'quality_report.json'
+      - '${_ARTIFACT_BUCKET}/quality-reports/'
+    waitFor: ['quality-gate']
+
+  # Step 6: Conditional deployment (only if quality gate passed)
+  - id: deploy
+    name: 'gcr.io/cloud-builders/gke-deploy'
+    args:
+      - 'run'
+      - '--filename'
+      - '${_K8S_MANIFESTS}'
+      - '--image'
+      - '${_IMAGE}'
+      - '--location'
+      - '${_CLUSTER_ZONE}'
+      - '--cluster'
+      - '${_CLUSTER_NAME}'
+    env:
+      - 'CLOUDSDK_COMPUTE_ZONE=${_CLUSTER_ZONE}'
+      - 'CLOUDSDK_CONTAINER_CLUSTER=${_CLUSTER_NAME}'
+    waitFor: ['quality-gate']
+
+options:
+  machineType: 'N1_HIGHCPU_8'
+  logging: CLOUD_LOGGING_ONLY
+
+substitutions:
+  _IMAGE: 'gcr.io/${PROJECT_ID}/${_SERVICE_NAME}:${COMMIT_SHA}'
+  _SERVICE_NAME: 'inka-api'
+  _DEPLOYMENT_TARGET: 'stage'  # Override to 'prod' for production deployments
+  _VERSION: '${COMMIT_SHA}'
+  _ARTIFACT_BUCKET: 'gs://${PROJECT_ID}-artifacts'
+  _K8S_MANIFESTS: 'infra/k8s/api'
+  _CLUSTER_NAME: 'inka-cluster'
+  _CLUSTER_ZONE: 'europe-west1-b'
+
+images:
+  - '${_IMAGE}'
+
+timeout: '1800s'

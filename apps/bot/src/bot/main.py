@@ -5,7 +5,7 @@ import sys
 from apps.bot.bot.handlers.booking import booking_handler
 from apps.bot.bot.handlers.management import management_handlers
 from apps.bot.bot.handlers.support.handlers import qa_menu, debug_handler
-from packages.core.logging_config import setup_logging
+from packages.core.logger_setup_config import setup_logging
 
 # Configure standardized JSON logging
 setup_logging()

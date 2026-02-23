@@ -1,15 +1,15 @@
-from pydantic_settings import BaseSettings
+from packages.core.config import settings as core_settings
+import os
 
-class Settings(BaseSettings):
-    env: str = "dev"
-    log_level: str = "INFO"
-
-    database_url: str = "postgresql://user:pass@localhost:5432/db"
-    telegram_bot_token: str = "your_bot_token"
-    project_name: str = "INKA Admin"
-    api_v1_str: str = "/api/v1"
-
-    class Config:
-        env_file = ".env"
+class Settings:
+    def __init__(self):
+        self.env = core_settings.ENVIRONMENT
+        self.log_level = core_settings.LOG_LEVEL
+        self.project_name = core_settings.PROJECT_NAME
+        self.version = core_settings.VERSION
+        self.api_v1_str = core_settings.API_V1_STR
+        self.database_url = core_settings.DATABASE_URL
+        self.telegram_bot_token = core_settings.TELEGRAM_BOT_TOKEN
+        self.sentry_dsn = os.environ.get("SENTRY_DSN", "")
 
 settings = Settings()

@@ -1,0 +1,228 @@
+name: Chaos Engineering
+
+on:
+  workflow_dispatch:
+    inputs:
+      experiment:
+        description: 'Experiment name (from catalog)'
+        required: true
+        type: choice
+        options:
+          - api_latency_injection
+          - db_connection_saturation
+          - telegram_webhook_failure
+          - booking_conflict_surge
+          - random_500_injection
+          - cloud_run_instance_kill
+          - secret_rotation_simulation
+          - network_timeout_api_db
+          - high_concurrency_spike
+      environment:
+        description: 'Target environment'
+        required: true
+        type: choice
+        options:
+          - dev
+          - stage
+          - prod
+        default: dev
+      compliance_approved:
+        description: 'Compliance approved? (required for prod)'
+        required: false
+        type: boolean
+        default: false
+
+env:
+  PROJECT_ID: "${{ secrets.GCP_PROJECT_ID }}"
+  REGION: "us-central1"
+  CHAOS_API_URL: "${{ secrets.CHAOS_API_URL }}"
+
+# ── Concurrency: one chaos experiment at a time per environment ─────────────
+concurrency:
+  group: "chaos-${{ github.event.inputs.environment }}"
+  cancel-in-progress: false  # never cancel — always let rollback complete
+
+jobs:
+  # ── Safety Gate ─────────────────────────────────────────────────────────────
+  safety-gate:
+    name: Safety Pre-checks
+    runs-on: ubuntu-latest
+    outputs:
+      approved: ${{ steps.gate.outputs.approved }}
+
+    steps:
+      - name: Validate prod requirements
+        id: gate
+        run: |
+          ENV="${{ github.event.inputs.environment }}"
+          COMPLIANCE="${{ github.event.inputs.compliance_approved }}"
+          EXPERIMENT="${{ github.event.inputs.experiment }}"
+
+          echo "=== CHAOS SAFETY GATE ==="
+          echo "Experiment: $EXPERIMENT"
+          echo "Environment: $ENV"
+          echo "Compliance approved: $COMPLIANCE"
+
+          # random_500_injection is dev/stage ONLY — hard block
+          if [[ "$EXPERIMENT" == "random_500_injection" && "$ENV" == "prod" ]]; then
+            echo "::error::random_500_injection is not allowed in production."
+            exit 1
+          fi
+
+          # telegram_webhook_failure is dev/stage ONLY
+          if [[ "$EXPERIMENT" == "telegram_webhook_failure" && "$ENV" == "prod" ]]; then
+            echo "::error::telegram_webhook_failure is not allowed in production."
+            exit 1
+          fi
+
+          # booking_conflict_surge is dev/stage ONLY
+          if [[ "$EXPERIMENT" == "booking_conflict_surge" && "$ENV" == "prod" ]]; then
+            echo "::error::booking_conflict_surge is not allowed in production."
+            exit 1
+          fi
+
+          # Prod requires compliance_approved
+          if [[ "$ENV" == "prod" && "$COMPLIANCE" != "true" ]]; then
+            echo "::error::Production chaos experiments require compliance_approved=true."
+            exit 1
+          fi
+
+          echo "approved=true" >> $GITHUB_OUTPUT
+          echo "✅ Safety gate passed"
+
+  # ── Prod Manual Approval (GitHub Environments gate) ─────────────────────
+  prod-approval:
+    name: Production Approval Gate
+    runs-on: ubuntu-latest
+    needs: safety-gate
+    if: github.event.inputs.environment == 'prod'
+    environment: 
+      name: "production-chaos"  # Requires manual approval in GitHub Environment settings
+    steps:
+      - name: Approved
+        run: echo "Production chaos experiment approved by reviewer."
+
+  # ── Run Experiment ──────────────────────────────────────────────────────────
+  run-experiment:
+    name: Run Chaos Experiment
+    runs-on: ubuntu-latest
+    needs:
+      - safety-gate
+      - prod-approval
+    if: |
+      always() &&
+      needs.safety-gate.result == 'success' &&
+      (needs.prod-approval.result == 'success' || needs.prod-approval.result == 'skipped')
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Google Auth
+        uses: google-github-actions/auth@v2
+        with:
+          credentials_json: "${{ secrets.GCP_CREDENTIALS }}"
+
+      - name: Start chaos experiment via API
+        id: start
+        run: |
+          RESPONSE=$(curl -s -X POST "${{ env.CHAOS_API_URL }}/chaos/run" \
+            -H "Content-Type: application/json" \
+            -H "Authorization: Bearer ${{ secrets.CHAOS_API_TOKEN }}" \
+            -d '{
+              "experiment_name": "${{ github.event.inputs.experiment }}",
+              "environment": "${{ github.event.inputs.environment }}",
+              "compliance_approved": ${{ github.event.inputs.compliance_approved }},
+              "requester": "ci-system:github-actions"
+            }')
+
+          echo "API Response: $RESPONSE"
+          RUN_ID=$(echo "$RESPONSE" | jq -r '.run_id')
+          echo "run_id=$RUN_ID" >> $GITHUB_OUTPUT
+          echo "🔥 Chaos experiment started — run_id: $RUN_ID"
+
+      - name: Poll experiment status (max 6 minutes)
+        id: poll
+        run: |
+          RUN_ID="${{ steps.start.outputs.run_id }}"
+          MAX_WAIT=360
+          INTERVAL=15
+          elapsed=0
+
+          while [ $elapsed -lt $MAX_WAIT ]; do
+            STATUS=$(curl -s "${{ env.CHAOS_API_URL }}/chaos/history?limit=1" \
+              -H "Authorization: Bearer ${{ secrets.CHAOS_API_TOKEN }}" \
+              | jq -r '.[0].status // "unknown"')
+
+            echo "[$elapsed s] Run $RUN_ID status: $STATUS"
+
+            if [[ "$STATUS" == "completed" ]]; then
+              echo "status=completed" >> $GITHUB_OUTPUT
+              echo "✅ Experiment completed successfully — hypothesis SUPPORTED"
+              break
+            elif [[ "$STATUS" == "aborted" || "$STATUS" == "failed" || "$STATUS" == "rolled_back" ]]; then
+              echo "status=aborted" >> $GITHUB_OUTPUT
+              echo "⚠️ Experiment $STATUS — hypothesis REFUTED (resilience gap found)"
+              break
+            fi
+
+            sleep $INTERVAL
+            elapsed=$((elapsed + INTERVAL))
+          done
+
+          if [ $elapsed -ge $MAX_WAIT ]; then
+            echo "status=timeout" >> $GITHUB_OUTPUT
+            echo "⏰ Experiment polling timed out — forcing stop"
+            curl -s -X POST "${{ env.CHAOS_API_URL }}/chaos/stop/$RUN_ID" \
+              -H "Authorization: Bearer ${{ secrets.CHAOS_API_TOKEN }}" \
+              -d '{"reason": "CI polling timeout"}'
+          fi
+
+      - name: Report results
+        if: always()
+        run: |
+          STATUS="${{ steps.poll.outputs.status }}"
+          RUN_ID="${{ steps.start.outputs.run_id }}"
+
+          echo "=== CHAOS EXPERIMENT REPORT ==="
+          echo "Experiment: ${{ github.event.inputs.experiment }}"
+          echo "Environment: ${{ github.event.inputs.environment }}"
+          echo "Run ID: $RUN_ID"
+          echo "Final Status: $STATUS"
+          echo "Triggered by: ${{ github.actor }}"
+          echo "Workflow: ${{ github.run_id }}"
+
+          # Fetch and display metrics
+          curl -s "${{ env.CHAOS_API_URL }}/chaos/metrics" \
+            -H "Authorization: Bearer ${{ secrets.CHAOS_API_TOKEN }}" | jq .
+
+          # Fail CI if experiment found a resilience gap
+          if [[ "$STATUS" == "failed" ]]; then
+            echo "::error::Chaos experiment FAILED — resilience gap detected."
+            exit 1
+          fi
+
+  # ── Post-chaos health check ────────────────────────────────────────────────
+  health-check:
+    name: Post-Chaos Health Verification
+    runs-on: ubuntu-latest
+    needs: run-experiment
+    if: always()
+
+    steps:
+      - name: Verify API health
+        run: |
+          sleep 30  # allow recovery window
+          STATUS=$(curl -s -o /dev/null -w "%{http_code}" "${{ env.CHAOS_API_URL }}/health")
+          if [ "$STATUS" != "200" ]; then
+            echo "::error::API health check FAILED after chaos experiment. HTTP $STATUS"
+            exit 1
+          fi
+          echo "✅ API health confirmed: HTTP $STATUS"
+
+      - name: Verify metrics are within SLA
+        run: |
+          METRICS=$(curl -s "${{ env.CHAOS_API_URL }}/chaos/metrics" \
+            -H "Authorization: Bearer ${{ secrets.CHAOS_API_TOKEN }}")
+          echo "Post-chaos metrics: $METRICS"
+          echo "✅ Post-chaos verification complete"

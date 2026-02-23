@@ -1,7 +1,7 @@
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ContextTypes, CommandHandler, ConversationHandler, CallbackQueryHandler, MessageHandler, filters
 from apps.bot.bot.utils.db import get_db
-from packages.core.domains.auth.models import User
+from packages.core.models.user import User
 from packages.core.domains.auth.break_glass import break_glass_service
 from packages.core.domains.auth.rbac import has_permission
 import uuid

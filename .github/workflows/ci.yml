@@ -133,16 +133,16 @@ jobs:
             --version "${{ github.ref_name }}" \
             --output-json quality_report.json
         env:
-          COVERAGE_PCT: ${{ env.COVERAGE_PCT }}
-          GITHUB_SHA: ${{ github.sha }}
+          COVERAGE_PCT: "${{ env.COVERAGE_PCT }}"
+          GITHUB_SHA: "${{ github.sha }}"
           # Override these via repository secrets / workflow inputs for real values:
-          OPEN_S1_BUGS: ${{ vars.OPEN_S1_BUGS || '0' }}
-          OPEN_S2_BUGS: ${{ vars.OPEN_S2_BUGS || '0' }}
-          CRITICAL_VULNS: ${{ vars.CRITICAL_VULNS || '0' }}
-          HIGH_VULNS: ${{ vars.HIGH_VULNS || '0' }}
-          MIGRATION_RISK_LEVEL: ${{ vars.MIGRATION_RISK_LEVEL || '0' }}
-          CODE_CHURN_PCT: ${{ vars.CODE_CHURN_PCT || '0' }}
-          COMPLIANCE_SCORE: ${{ vars.COMPLIANCE_SCORE || '100' }}
+          OPEN_S1_BUGS: "${{ vars.OPEN_S1_BUGS || '0' }}"
+          OPEN_S2_BUGS: "${{ vars.OPEN_S2_BUGS || '0' }}"
+          CRITICAL_VULNS: "${{ vars.CRITICAL_VULNS || '0' }}"
+          HIGH_VULNS: "${{ vars.HIGH_VULNS || '0' }}"
+          MIGRATION_RISK_LEVEL: "${{ vars.MIGRATION_RISK_LEVEL || '0' }}"
+          CODE_CHURN_PCT: "${{ vars.CODE_CHURN_PCT || '0' }}"
+          COMPLIANCE_SCORE: "${{ vars.COMPLIANCE_SCORE || '100' }}"
           CI_LINT_PASSED: 'true'
           CI_TESTS_PASSED: 'true'
 

@@ -22,16 +22,22 @@ export const useAuthStore = create<AuthState>()(
             token: null,
             isAuthenticated: false,
             setAuth: (user, token) => {
-                localStorage.setItem('auth_token', token);
+                // The persist middleware handles localStorage by default if configured,
+                // but we can also manually sync if needed for external scripts.
                 set({ user, token, isAuthenticated: true });
             },
             logout: () => {
-                localStorage.removeItem('auth_token');
                 set({ user: null, token: null, isAuthenticated: false });
             },
         }),
         {
             name: 'auth-storage',
+            // Specify which parts of the state to persist
+            partialize: (state) => ({
+                user: state.user,
+                token: state.token,
+                isAuthenticated: state.isAuthenticated
+            }),
         }
     )
 );

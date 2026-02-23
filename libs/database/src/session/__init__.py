@@ -32,6 +32,13 @@ def SessionLocal():
     )
     return _SessionLocal()
 
+def AsyncSessionLocal():
+    engine = _get_async_engine()
+    _AsyncSessionLocal = sessionmaker(
+        engine, class_=AsyncSession, expire_on_commit=False
+    )
+    return _AsyncSessionLocal()
+
 async def get_db():
     """Dependency for FastAPI endpoints."""
     engine = _get_async_engine()

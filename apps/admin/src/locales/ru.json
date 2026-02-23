@@ -1,0 +1,32 @@
+{
+    "setup": {
+        "title": "Настройка INKA Admin",
+        "step_count": "Шаг {{step}} из 3 - Первоначальная конфигурация",
+        "error_bot_token": "Введите корректный Bot Token от @BotFather",
+        "error_secret_key": "API Secret Key должен быть минимум 32 символа",
+        "error_db_url": "Введите корректный PostgreSQL URL",
+        "error_email": "Введите корректный email",
+        "error_password": "Пароль должен быть минимум 8 символов",
+        "success_title": "Настройка завершена!",
+        "success_message": "Перенаправление на страницу входа...",
+        "bot_api_title": "Telegram Bot & API",
+        "bot_token": "Bot Token",
+        "bot_token_hint": "Получите токен у @BotFather в Telegram",
+        "api_secret": "API Secret Key",
+        "generate": "Сгенерировать",
+        "api_secret_hint": "Используется для шифрования JWT токенов",
+        "database_title": "База Данных",
+        "db_url": "PostgreSQL URL",
+        "db_url_hint": "Пример: postgresql://user:pass@host:5432/dbname",
+        "gcp_project": "Google Cloud Project ID (опционально)",
+        "gcp_project_hint": "Для Cloud Storage и Secret Manager",
+        "admin_account_title": "Аккаунт Администратора",
+        "email": "Email",
+        "password": "Пароль",
+        "admin_alert": "Этот аккаунт будет иметь полный доступ к системе. Сохраните пароль.",
+        "back": "Назад",
+        "next": "Далее",
+        "finish": "Завершить настройку",
+        "setting_up": "Настройка..."
+    }
+}

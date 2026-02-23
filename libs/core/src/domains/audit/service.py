@@ -1,6 +1,6 @@
 from typing import Any
 import uuid
-from packages.core.domains.audit.models import AuditLog
+from packages.core.models.audit import AuditLog
 
 class AuditService:
     def log(

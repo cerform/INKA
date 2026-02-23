@@ -19,14 +19,15 @@ on:
         options: ["true", "false"]
 
 env:
-  PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }}
-  REGION: europe-west1
+  PROJECT_ID: "${{ secrets.GCP_PROJECT_ID }}"
+  REGION: "europe-west1"
 
 jobs:
   rollback:
     name: "Execute Rollback → ${{ github.event.inputs.environment }}"
     runs-on: ubuntu-latest
-    environment: ${{ github.event.inputs.environment }}    # Requires approver for prod
+    environment: 
+      name: "${{ github.event.inputs.environment }}"    # Requires approver for prod
     steps:
       - uses: actions/checkout@v4
 
@@ -41,14 +42,24 @@ jobs:
       - name: Google Auth
         uses: google-github-actions/auth@v2
         with:
-          credentials_json: ${{ secrets.GCP_CREDENTIALS_PROD }}
+          credentials_json: "${{ secrets.GCP_CREDENTIALS_PROD }}"
 
       - name: Get previous stable revision from release_registry
         id: get_prev
         env:
-          DATABASE_URL: ${{ secrets[format('{0}_DATABASE_URL', github.event.inputs.environment)] }}
-          ENVIRONMENT: ${{ github.event.inputs.environment }}
-        run: python scripts/get_rollback_revision.py
+          DATABASE_URL_DEV: "${{ secrets.DEV_DATABASE_URL }}"
+          DATABASE_URL_STAGE: "${{ secrets.STAGE_DATABASE_URL }}"
+          DATABASE_URL_PROD: "${{ secrets.PROD_DATABASE_URL }}"
+          ENVIRONMENT: "${{ github.event.inputs.environment }}"
+        run: |
+          if [[ "$ENVIRONMENT" == "dev" ]]; then
+            export DATABASE_URL="$DATABASE_URL_DEV"
+          elif [[ "$ENVIRONMENT" == "stage" ]]; then
+            export DATABASE_URL="$DATABASE_URL_STAGE"
+          else
+            export DATABASE_URL="$DATABASE_URL_PROD"
+          fi
+          python scripts/get_rollback_revision.py
 
       - name: Rollback API traffic to previous revision
         run: |
@@ -70,25 +81,45 @@ jobs:
       - name: Downgrade DB migration (if requested and reversible)
         if: github.event.inputs.downgrade_db == 'true'
         env:
-          DATABASE_URL: ${{ secrets[format('{0}_DATABASE_URL', github.event.inputs.environment)] }}
+          DATABASE_URL_DEV: "${{ secrets.DEV_DATABASE_URL }}"
+          DATABASE_URL_STAGE: "${{ secrets.STAGE_DATABASE_URL }}"
+          DATABASE_URL_PROD: "${{ secrets.PROD_DATABASE_URL }}"
+          ENVIRONMENT: "${{ github.event.inputs.environment }}"
         run: |
+          if [[ "$ENVIRONMENT" == "dev" ]]; then
+            export DATABASE_URL="$DATABASE_URL_DEV"
+          elif [[ "$ENVIRONMENT" == "stage" ]]; then
+            export DATABASE_URL="$DATABASE_URL_STAGE"
+          else
+            export DATABASE_URL="$DATABASE_URL_PROD"
+          fi
           echo "⚠️ Running DB downgrade — verify migration is marked reversible"
           alembic -c libs/database/alembic.ini downgrade -1
 
       - name: Log incident to release_registry
         env:
-          DATABASE_URL: ${{ secrets[format('{0}_DATABASE_URL', github.event.inputs.environment)] }}
-          ENVIRONMENT: ${{ github.event.inputs.environment }}
-          REASON: ${{ github.event.inputs.reason }}
-          ROLLED_BACK_BY: ${{ github.actor }}
-        run: python scripts/log_rollback_incident.py
+          DATABASE_URL_DEV: "${{ secrets.DEV_DATABASE_URL }}"
+          DATABASE_URL_STAGE: "${{ secrets.STAGE_DATABASE_URL }}"
+          DATABASE_URL_PROD: "${{ secrets.PROD_DATABASE_URL }}"
+          ENVIRONMENT: "${{ github.event.inputs.environment }}"
+          REASON: "${{ github.event.inputs.reason }}"
+          ROLLED_BACK_BY: "${{ github.actor }}"
+        run: |
+          if [[ "$ENVIRONMENT" == "dev" ]]; then
+            export DATABASE_URL="$DATABASE_URL_DEV"
+          elif [[ "$ENVIRONMENT" == "stage" ]]; then
+            export DATABASE_URL="$DATABASE_URL_STAGE"
+          else
+            export DATABASE_URL="$DATABASE_URL_PROD"
+          fi
+          python scripts/log_rollback_incident.py
 
       - name: Send Telegram alert
         env:
-          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_ADMIN_BOT_TOKEN }}
-          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_RELEASE_CHAT_ID }}
-          ENV: ${{ github.event.inputs.environment }}
-          REASON: ${{ github.event.inputs.reason }}
+          TELEGRAM_BOT_TOKEN: "${{ secrets.TELEGRAM_ADMIN_BOT_TOKEN }}"
+          TELEGRAM_CHAT_ID: "${{ secrets.TELEGRAM_RELEASE_CHAT_ID }}"
+          ENV: "${{ github.event.inputs.environment }}"
+          REASON: "${{ github.event.inputs.reason }}"
         run: |
           curl -s -X POST "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage" \
             -d chat_id="${TELEGRAM_CHAT_ID}" \

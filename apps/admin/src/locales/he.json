@@ -1,0 +1,32 @@
+{
+    "setup": {
+        "title": "הגדרת INKA Admin",
+        "step_count": "שלב {{step}} מתוך 3 - תצורה ראשונית",
+        "error_bot_token": "אנא הזן טוקן בוט תקין מ-@BotFather",
+        "error_secret_key": "מפתח סודי חייב להיות לפחות 32 תווים",
+        "error_db_url": "אנא הזן כתובת PostgreSQL תקינה",
+        "error_email": "אנא הזן אימייל תקין",
+        "error_password": "הסיסמה חייבת להיות לפחות 8 תווים",
+        "success_title": "ההגדרה הושלמה!",
+        "success_message": "מעביר לדף הכניסה...",
+        "bot_api_title": "Telegram Bot & API",
+        "bot_token": "טוקן בוט",
+        "bot_token_hint": "קבל את הטוקן מ-@BotFather",
+        "api_secret": "מפתח סודי API",
+        "generate": "צור",
+        "api_secret_hint": "משמש להצפנת טוקני JWT",
+        "database_title": "בסיס נתונים",
+        "db_url": "כתובת PostgreSQL",
+        "db_url_hint": "פורמט: postgresql://user:pass@host:5432/dbname",
+        "gcp_project": "מזהה פרויקט Google Cloud (אופציונלי)",
+        "gcp_project_hint": "עבור Cloud Storage ו-Secret Manager",
+        "admin_account_title": "חשבון מנהל",
+        "email": "אימייל",
+        "password": "סיסמה",
+        "admin_alert": "לחשבון זה תהיה גישה מלאה למערכת. שמור על הסיסמה.",
+        "back": "חזור",
+        "next": "הבא",
+        "finish": "סיום הגדרה",
+        "setting_up": "מגדיר..."
+    }
+}

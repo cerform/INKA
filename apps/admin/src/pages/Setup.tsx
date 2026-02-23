@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -16,10 +17,15 @@ interface SetupConfig {
 }
 
 export default function SetupWizard() {
+    const { t, i18n } = useTranslation();
     const [step, setStep] = useState(1);
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState('');
     const [success, setSuccess] = useState(false);
+
+    const changeLanguage = (lng: string) => {
+        i18n.changeLanguage(lng);
+    };
 
     const [config, setConfig] = useState<SetupConfig>({
         botToken: '',
@@ -46,29 +52,29 @@ export default function SetupWizard() {
 
         if (step === 1) {
             if (!config.botToken || !config.botToken.includes(':')) {
-                setError('Введите корректный Bot Token от @BotFather');
+                setError(t('setup.error_bot_token'));
                 return false;
             }
             if (!config.apiSecretKey || config.apiSecretKey.length < 32) {
-                setError('API Secret Key должен быть минимум 32 символа');
+                setError(t('setup.error_secret_key'));
                 return false;
             }
         }
 
         if (step === 2) {
             if (!config.databaseUrl || !config.databaseUrl.startsWith('postgresql://')) {
-                setError('Введите корректный PostgreSQL URL');
+                setError(t('setup.error_db_url'));
                 return false;
             }
         }
 
         if (step === 3) {
             if (!config.adminEmail || !config.adminEmail.includes('@')) {
-                setError('Введите корректный email');
+                setError(t('setup.error_email'));
                 return false;
             }
             if (!config.adminPassword || config.adminPassword.length < 8) {
-                setError('Пароль должен быть минимум 8 символов');
+                setError(t('setup.error_password'));
                 return false;
             }
         }
@@ -97,7 +103,7 @@ export default function SetupWizard() {
 
             if (!response.ok) {
                 const data = await response.json();
-                throw new Error(data.detail || 'Ошибка настройки');
+                throw new Error(data.detail || t('setup.error_setup'));
             }
 
             setSuccess(true);
@@ -118,8 +124,8 @@ export default function SetupWizard() {
                     <CardContent className="pt-6">
                         <div className="text-center">
                             <CheckCircle2 className="w-16 h-16 text-green-500 mx-auto mb-4" />
-                            <h2 className="text-2xl font-bold mb-2">Настройка завершена!</h2>
-                            <p className="text-gray-600">Перенаправление на страницу входа...</p>
+                            <h2 className="text-2xl font-bold mb-2">{t('setup.success_title')}</h2>
+                            <p className="text-gray-600">{t('setup.success_message')}</p>
                         </div>
                     </CardContent>
                 </Card>
@@ -130,10 +136,15 @@ export default function SetupWizard() {
     return (
         <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-blue-50 to-indigo-100 p-4">
             <Card className="w-full max-w-2xl">
-                <CardHeader>
-                    <CardTitle className="text-3xl">Настройка INKA Admin</CardTitle>
+                <CardHeader className="relative">
+                    <div className="absolute top-6 right-6 flex gap-2">
+                        <Button variant="ghost" size="sm" onClick={() => changeLanguage('ru')}>RU</Button>
+                        <Button variant="ghost" size="sm" onClick={() => changeLanguage('he')}>HE</Button>
+                        <Button variant="ghost" size="sm" onClick={() => changeLanguage('en')}>EN</Button>
+                    </div>
+                    <CardTitle className="text-3xl">{t('setup.title')}</CardTitle>
                     <CardDescription>
-                        Шаг {step} из 3 - Первоначальная конфигурация системы
+                        {t('setup.step_count', { step })}
                     </CardDescription>
                 </CardHeader>
 
@@ -158,10 +169,10 @@ export default function SetupWizard() {
                     {/* Step 1: Bot & API Configuration */}
                     {step === 1 && (
                         <div className="space-y-4">
-                            <h3 className="text-xl font-semibold">Telegram Bot & API</h3>
+                            <h3 className="text-xl font-semibold">{t('setup.bot_api_title')}</h3>
 
                             <div className="space-y-2">
-                                <Label htmlFor="botToken">Bot Token</Label>
+                                <Label htmlFor="botToken">{t('setup.bot_token')}</Label>
                                 <Input
                                     id="botToken"
                                     placeholder="123456789:ABCdefGHIjklMNOpqrsTUVwxyz"
@@ -169,31 +180,31 @@ export default function SetupWizard() {
                                     onChange={handleChange('botToken')}
                                 />
                                 <p className="text-sm text-gray-500">
-                                    Получите токен у @BotFather в Telegram
+                                    {t('setup.bot_token_hint')}
                                 </p>
                             </div>
 
                             <div className="space-y-2">
                                 <div className="flex justify-between items-center">
-                                    <Label htmlFor="apiSecretKey">API Secret Key</Label>
+                                    <Label htmlFor="apiSecretKey">{t('setup.api_secret')}</Label>
                                     <Button
                                         type="button"
                                         variant="outline"
                                         size="sm"
                                         onClick={generateSecretKey}
                                     >
-                                        Сгенерировать
+                                        {t('setup.generate')}
                                     </Button>
                                 </div>
                                 <Input
                                     id="apiSecretKey"
                                     type="password"
-                                    placeholder="Минимум 32 символа"
+                                    placeholder="Min 32 chars"
                                     value={config.apiSecretKey}
                                     onChange={handleChange('apiSecretKey')}
                                 />
                                 <p className="text-sm text-gray-500">
-                                    Используется для шифрования JWT токенов
+                                    {t('setup.api_secret_hint')}
                                 </p>
                             </div>
                         </div>
@@ -202,10 +213,10 @@ export default function SetupWizard() {
                     {/* Step 2: Database Configuration */}
                     {step === 2 && (
                         <div className="space-y-4">
-                            <h3 className="text-xl font-semibold">База Данных</h3>
+                            <h3 className="text-xl font-semibold">{t('setup.database_title')}</h3>
 
                             <div className="space-y-2">
-                                <Label htmlFor="databaseUrl">PostgreSQL URL</Label>
+                                <Label htmlFor="databaseUrl">{t('setup.db_url')}</Label>
                                 <Input
                                     id="databaseUrl"
                                     placeholder="postgresql://user:password@host:5432/dbname"
@@ -213,12 +224,12 @@ export default function SetupWizard() {
                                     onChange={handleChange('databaseUrl')}
                                 />
                                 <p className="text-sm text-gray-500">
-                                    Для Cloud SQL используйте формат: postgresql://user:pass@/dbname?host=/cloudsql/PROJECT:REGION:INSTANCE
+                                    {t('setup.db_url_hint')}
                                 </p>
                             </div>
 
                             <div className="space-y-2">
-                                <Label htmlFor="gcpProjectId">Google Cloud Project ID (опционально)</Label>
+                                <Label htmlFor="gcpProjectId">{t('setup.gcp_project')}</Label>
                                 <Input
                                     id="gcpProjectId"
                                     placeholder="my-project-id"
@@ -226,7 +237,7 @@ export default function SetupWizard() {
                                     onChange={handleChange('gcpProjectId')}
                                 />
                                 <p className="text-sm text-gray-500">
-                                    Для интеграции с Google Cloud Storage и Secret Manager
+                                    {t('setup.gcp_project_hint')}
                                 </p>
                             </div>
                         </div>
@@ -235,10 +246,10 @@ export default function SetupWizard() {
                     {/* Step 3: Admin Account */}
                     {step === 3 && (
                         <div className="space-y-4">
-                            <h3 className="text-xl font-semibold">Аккаунт Администратора</h3>
+                            <h3 className="text-xl font-semibold">{t('setup.admin_account_title')}</h3>
 
                             <div className="space-y-2">
-                                <Label htmlFor="adminEmail">Email</Label>
+                                <Label htmlFor="adminEmail">{t('setup.email')}</Label>
                                 <Input
                                     id="adminEmail"
                                     type="email"
@@ -249,11 +260,11 @@ export default function SetupWizard() {
                             </div>
 
                             <div className="space-y-2">
-                                <Label htmlFor="adminPassword">Пароль</Label>
+                                <Label htmlFor="adminPassword">{t('setup.password')}</Label>
                                 <Input
                                     id="adminPassword"
                                     type="password"
-                                    placeholder="Минимум 8 символов"
+                                    placeholder="Min 8 chars"
                                     value={config.adminPassword}
                                     onChange={handleChange('adminPassword')}
                                 />
@@ -261,7 +272,7 @@ export default function SetupWizard() {
 
                             <Alert>
                                 <AlertDescription>
-                                    Этот аккаунт будет иметь полный доступ к системе. Сохраните пароль в надежном месте.
+                                    {t('setup.admin_alert')}
                                 </AlertDescription>
                             </Alert>
                         </div>
@@ -274,22 +285,22 @@ export default function SetupWizard() {
                             onClick={() => setStep(step - 1)}
                             disabled={step === 1 || loading}
                         >
-                            Назад
+                            {t('setup.back')}
                         </Button>
 
                         {step < 3 ? (
                             <Button onClick={handleNext} disabled={loading}>
-                                Далее
+                                {t('setup.next')}
                             </Button>
                         ) : (
                             <Button onClick={handleSubmit} disabled={loading}>
                                 {loading ? (
                                     <>
                                         <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                                        Настройка...
+                                        {t('setup.setting_up')}
                                     </>
                                 ) : (
-                                    'Завершить настройку'
+                                    t('setup.finish')
                                 )}
                             </Button>
                         )}

@@ -19,10 +19,10 @@ import uuid
 from datetime import datetime
 from typing import Optional
 
-from libs.chaos.catalog import ExperimentCatalog, ExperimentDefinition
-from libs.chaos.safety import SafetyController, AbortConditionError, ComplianceGateError, EnvironmentGateError
-from libs.chaos.rollback import RollbackManager
-from libs.chaos.metrics import ChaosMetricsCollector
+from packages.chaos.catalog import ExperimentCatalog, ExperimentDefinition
+from packages.chaos.safety import SafetyController, AbortConditionError, ComplianceGateError, EnvironmentGateError
+from packages.chaos.rollback import RollbackManager
+from packages.chaos.metrics import ChaosMetricsCollector
 
 logger = logging.getLogger(__name__)
 
@@ -266,7 +266,7 @@ class ChaosRunner:
         requester: str,
         compliance_approved: bool,
     ) -> None:
-        from libs.chaos.models import ChaosRun, RunStatus, Environment
+        from packages.chaos.models import ChaosRun, RunStatus, Environment
 
         run = ChaosRun(
             id=uuid.UUID(run_id),
@@ -281,7 +281,7 @@ class ChaosRunner:
 
     async def _persist_run_status(self, run_id: str, status: str, started_at: datetime) -> None:
         from sqlalchemy import update
-        from libs.chaos.models import ChaosRun, RunStatus
+        from packages.chaos.models import ChaosRun, RunStatus
         import uuid as _uuid
 
         await self._session.execute(
@@ -298,7 +298,7 @@ class ChaosRunner:
         abort_reason: Optional[str] = None,
     ) -> None:
         from sqlalchemy import update
-        from libs.chaos.models import ChaosRun, RunStatus
+        from packages.chaos.models import ChaosRun, RunStatus
         import uuid as _uuid
 
         await self._session.execute(

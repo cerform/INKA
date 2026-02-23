@@ -21,7 +21,7 @@ from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import relationship
 
 try:
-    from libs.core.src.database import Base  # type: ignore
+    from packages.core.database import Base  # type: ignore
 except ImportError:
     from sqlalchemy.orm import DeclarativeBase
 

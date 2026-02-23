@@ -37,7 +37,7 @@ from datetime import datetime, timezone
 # Allow running from repo root without install
 sys.path.insert(0, os.getcwd())
 
-from libs.quality.src.quality_score import QualityEngine, QualityInput, QualityReport, DEPLOYMENT_THRESHOLDS
+from packages.quality.quality_score import QualityEngine, QualityInput, QualityReport, DEPLOYMENT_THRESHOLDS
 
 # ─────────────────────────────────────────────────────────
 # Deployment gates

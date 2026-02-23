@@ -39,7 +39,7 @@ class ChaosMetricsCollector:
         auto_recovered: Optional[bool] = None,
     ) -> None:
         """Write a metric snapshot for an in-progress chaos run."""
-        from libs.chaos.models import ChaosMetric  # avoid circular import
+        from packages.chaos.models import ChaosMetric  # avoid circular import
 
         metric = ChaosMetric(
             run_id=run_id,
@@ -67,7 +67,7 @@ class ChaosMetricsCollector:
         Returns None if run is still in progress.
         """
         from sqlalchemy import select
-        from libs.chaos.models import ChaosRun, RunStatus
+        from packages.chaos.models import ChaosRun, RunStatus
 
         result = await session.execute(
             select(ChaosRun).where(ChaosRun.id == run_id)
@@ -90,7 +90,7 @@ class ChaosMetricsCollector:
         (i.e., status == COMPLETED without manual rollback) in the given window.
         """
         from sqlalchemy import select, func
-        from libs.chaos.models import ChaosRun, ChaosMetric, RunStatus
+        from packages.chaos.models import ChaosRun, ChaosMetric, RunStatus
 
         since = datetime.utcnow() - timedelta(days=window_days)
 
@@ -123,7 +123,7 @@ class ChaosMetricsCollector:
     async def rollback_frequency(self, session, window_days: int = 30) -> int:
         """Count externally triggered rollbacks in the given time window."""
         from sqlalchemy import select, func
-        from libs.chaos.models import ChaosRun, RunStatus
+        from packages.chaos.models import ChaosRun, RunStatus
 
         since = datetime.utcnow() - timedelta(days=window_days)
         result = await session.execute(
@@ -142,7 +142,7 @@ class ChaosMetricsCollector:
     async def failed_resilience_tests(self, session, window_days: int = 30) -> int:
         """Count aborted/failed runs (experiment exposed real weaknesses)."""
         from sqlalchemy import select, func
-        from libs.chaos.models import ChaosRun, RunStatus
+        from packages.chaos.models import ChaosRun, RunStatus
 
         since = datetime.utcnow() - timedelta(days=window_days)
         result = await session.execute(
@@ -159,7 +159,7 @@ class ChaosMetricsCollector:
         mttr_list = []
 
         from sqlalchemy import select
-        from libs.chaos.models import ChaosRun, RunStatus
+        from packages.chaos.models import ChaosRun, RunStatus
 
         since = datetime.utcnow() - timedelta(days=window_days)
         runs_result = await session.execute(

@@ -16,7 +16,7 @@ from aiogram import Router
 from aiogram.filters import Command
 from aiogram.types import Message
 
-from libs.quality.src.quality_score import QualityEngine, QualityInput, QualityReport
+from packages.quality.quality_score import QualityEngine, QualityInput, QualityReport
 
 
 logger = logging.getLogger(__name__)
@@ -93,7 +93,7 @@ async def _fetch_quality_input(version: str) -> QualityInput | None:
     Returns None if version not found.
     """
     # TODO: replace stub with real data source
-    from libs.quality.src.data_source import QualityDataSource  # lazy import
+    from packages.quality.data_source import QualityDataSource  # lazy import
     ds = QualityDataSource()
     return await ds.get(version)
 
@@ -121,17 +121,45 @@ async def release_quality_handler(message: Message) -> None:
         return
 
     version = args[2].lower()
-    await message.answer(f"⏳ Computing quality score for `{version}`…", parse_mode="Markdown")
-
-    quality_input = await _fetch_quality_input(version)
-    if quality_input is None:
-        await message.answer(f"❌ Version `{version}` not found in release registry.")
-        return
-
-    engine = QualityEngine()
-    report = engine.compute(quality_input)
-    await message.answer(_render_report(report), parse_mode="Markdown")
-    logger.info(
-        "quality_score_served",
-        extra={"version": report.version, "score": report.final_score, "recommendation": report.recommendation},
+    
+    # Show loading state
+    progress_msg = await message.answer(
+        f"⏳ Computing quality score for `{_esc(version)}`…",
+        parse_mode="Markdown"
     )
+
+    try:
+        quality_input = await _fetch_quality_input(version)
+        if quality_input is None:
+            await message.answer(
+                f"❌ Version `{_esc(version)}` not found in release registry.",
+                parse_mode="Markdown"
+            )
+            return
+
+        engine = QualityEngine()
+        report = engine.compute(quality_input)
+        
+        # Send formatted report
+        await message.answer(_render_report(report), parse_mode="Markdown")
+        
+        # Log metrics
+        logger.info(
+            "quality_score_served",
+            extra={
+                "version": report.version,
+                "score": report.final_score,
+                "recommendation": report.recommendation,
+                "user_id": message.from_user.id if message.from_user else None,
+            },
+        )
+        
+        # Clean up progress message
+        await progress_msg.delete()
+        
+    except Exception as e:
+        logger.error(f"Error computing quality score: {e}")
+        await message.answer(
+            f"❌ Error computing quality score: `{str(e)[:100]}`",
+            parse_mode="Markdown"
+        )

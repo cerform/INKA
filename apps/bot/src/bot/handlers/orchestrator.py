@@ -1,7 +1,7 @@
 from telegram import Update
 from telegram.ext import ContextTypes, Router
 from langchain_core.messages import HumanMessage, AIMessage
-from libs.orchestrator.src.graph import create_orchestrator_graph
+from packages.orchestrator.graph import create_orchestrator_graph
 
 orchestrator_router = Router()
 

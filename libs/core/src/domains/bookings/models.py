@@ -21,6 +21,7 @@ class Booking(Base):
             name="booking_status_check"
         ),
         Index("idx_booking_time", "master_id", "start_time", "end_time"),
+        {"extend_existing": True},
     )
 
     # Relationships

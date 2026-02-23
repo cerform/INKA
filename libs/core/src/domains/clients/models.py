@@ -6,6 +6,7 @@ from sqlalchemy.orm import relationship
 from packages.db.base_class import Base
 
 class Client(Base):
+    __table_args__ = {"extend_existing": True}
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     full_name = Column(Text, nullable=False)
     phone = Column(String, unique=True, index=True, nullable=False)

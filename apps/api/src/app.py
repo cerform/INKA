@@ -5,7 +5,7 @@ from apps.api.v1.api import api_router
 
 from apps.bot.main import bot, set_webhook
 
-from packages.core.logging import setup_logging
+from packages.core.logger_setup import setup_logging
 from apps.api.deps.logging_middleware import LoggingMiddleware
 
 setup_logging()

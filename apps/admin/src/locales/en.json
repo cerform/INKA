@@ -1,0 +1,32 @@
+{
+    "setup": {
+        "title": "INKA Admin Setup",
+        "step_count": "Step {{step}} of 3 - Initial Configuration",
+        "error_bot_token": "Please enter a valid Bot Token from @BotFather",
+        "error_secret_key": "API Secret Key must be at least 32 characters",
+        "error_db_url": "Please enter a valid PostgreSQL URL",
+        "error_email": "Please enter a valid email",
+        "error_password": "Password must be at least 8 characters",
+        "success_title": "Setup Complete!",
+        "success_message": "Redirecting to login...",
+        "bot_api_title": "Telegram Bot & API",
+        "bot_token": "Bot Token",
+        "bot_token_hint": "Get your token from @BotFather",
+        "api_secret": "API Secret Key",
+        "generate": "Generate",
+        "api_secret_hint": "Used for JWT encryption",
+        "database_title": "Database",
+        "db_url": "PostgreSQL URL",
+        "db_url_hint": "Format: postgresql://user:pass@host:5432/dbname",
+        "gcp_project": "Google Cloud Project ID (Optional)",
+        "gcp_project_hint": "For Cloud Storage and Secret Manager",
+        "admin_account_title": "Admin Account",
+        "email": "Email",
+        "password": "Password",
+        "admin_alert": "This account will have full system access. Keep your password safe.",
+        "back": "Back",
+        "next": "Next",
+        "finish": "Finish Setup",
+        "setting_up": "Setting up..."
+    }
+}

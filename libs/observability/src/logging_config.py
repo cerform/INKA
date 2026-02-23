@@ -1,50 +1,90 @@
+"""
+Structured logging configuration using structlog.
+
+- JSON output in production (ENVIRONMENT != "development")
+- Pretty console output in development
+- Context vars: trace_id, request_id, actor_id, env, service
+"""
+from __future__ import annotations
+
 import logging
-import json
-import uuid
-from datetime import datetime
-from pythonjsonlogger import jsonlogger
-from packages.core.config import settings
+import sys
 
-class CustomJsonFormatter(jsonlogger.JsonFormatter):
-    def add_fields(self, log_record, record, message_dict):
-        super(CustomJsonFormatter, self).add_fields(log_record, record, message_dict)
-        if not log_record.get('timestamp'):
-            now = datetime.utcnow().strftime('%Y-%m-%dT%H:%M:%S.%fZ')
-            log_record['timestamp'] = now
-        if log_record.get('level'):
-            log_record['level'] = log_record['level'].upper()
-        else:
-            log_record['level'] = record.levelname
-        
-        # Add tracking and business context
-        log_record['request_id'] = getattr(record, 'request_id', None)
-        log_record['actor_id'] = getattr(record, 'actor_id', None)
-        log_record['role'] = getattr(record, 'role', None)
-        log_record['action'] = getattr(record, 'action', None)
-        log_record['entity'] = getattr(record, 'entity', None)
-        log_record['latency_ms'] = getattr(record, 'latency_ms', None)
+import structlog
 
-def setup_logging():
-    logger = logging.getLogger()
-    log_handler = logging.StreamHandler()
-    formatter = CustomJsonFormatter('%(timestamp)s %(level)s %(name)s %(message)s')
-    log_handler.setFormatter(formatter)
-    logger.addHandler(log_handler)
-    logger.setLevel(logging.INFO)
-    
-    # Silence overly verbose loggers
-    logging.getLogger("python-telegram-bot").setLevel(logging.INFO)
-    logging.getLogger("uvicorn.access").setLevel(logging.WARNING)
-    logging.getLogger("sqlalchemy.engine").setLevel(logging.WARNING)
 
-# Context filter to add request/actor IDs automatically
-class ContextFilter(logging.Filter):
-    def __init__(self):
-        super().__init__()
-        self.request_id = None
-        self.actor_id = None
+def setup_logging(
+    log_level: str = "INFO",
+    environment: str = "development",
+    service_name: str = "inka",
+) -> None:
+    """Configure structured logging for the entire application."""
 
-    def filter(self, record):
-        record.request_id = self.request_id
-        record.actor_id = self.actor_id
-        return True
+    shared_processors: list[structlog.types.Processor] = [
+        structlog.contextvars.merge_contextvars,
+        structlog.stdlib.add_logger_name,
+        structlog.stdlib.add_log_level,
+        structlog.stdlib.PositionalArgumentsFormatter(),
+        structlog.processors.TimeStamper(fmt="iso"),
+        structlog.processors.StackInfoRenderer(),
+        structlog.processors.UnicodeDecoder(),
+        _add_service_info(service_name, environment),
+    ]
+
+    if environment == "development":
+        # Pretty console output for local dev
+        renderer: structlog.types.Processor = structlog.dev.ConsoleRenderer()
+    else:
+        # JSON for production / Cloud Run
+        renderer = structlog.processors.JSONRenderer()
+
+    structlog.configure(
+        processors=[
+            *shared_processors,
+            structlog.stdlib.ProcessorFormatter.wrap_for_formatter,
+        ],
+        logger_factory=structlog.stdlib.LoggerFactory(),
+        wrapper_class=structlog.stdlib.BoundLogger,
+        cache_logger_on_first_use=True,
+    )
+
+    formatter = structlog.stdlib.ProcessorFormatter(
+        processors=[
+            structlog.stdlib.ProcessorFormatter.remove_processors_meta,
+            renderer,
+        ],
+    )
+
+    handler = logging.StreamHandler(sys.stdout)
+    handler.setFormatter(formatter)
+
+    root_logger = logging.getLogger()
+    root_logger.handlers.clear()
+    root_logger.addHandler(handler)
+    root_logger.setLevel(getattr(logging, log_level.upper(), logging.INFO))
+
+    # Quieten noisy third-party loggers
+    for noisy in ("uvicorn.access", "sqlalchemy.engine", "aiogram"):
+        logging.getLogger(noisy).setLevel(logging.WARNING)
+
+
+def _add_service_info(
+    service_name: str, environment: str
+) -> structlog.types.Processor:
+    """Processor that stamps every log with service metadata."""
+
+    def processor(
+        logger: structlog.types.WrappedLogger,
+        method_name: str,
+        event_dict: structlog.types.EventDict,
+    ) -> structlog.types.EventDict:
+        event_dict.setdefault("service", service_name)
+        event_dict.setdefault("env", environment)
+        return event_dict
+
+    return processor
+
+
+def get_logger(name: str | None = None) -> structlog.stdlib.BoundLogger:
+    """Return a structlog logger, optionally named."""
+    return structlog.get_logger(name)

@@ -4,7 +4,7 @@ Tests for QualityEngine — deterministic scoring validation.
 Run: pytest libs/quality/tests/ -v
 """
 import pytest
-from libs.quality.src.quality_score import QualityEngine, QualityInput
+from packages.quality.quality_score import QualityEngine, QualityInput
 
 
 def _base_input(**overrides) -> QualityInput:

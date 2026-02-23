@@ -1,0 +1,21 @@
+steps:
+  - name: 'gcr.io/cloud-builders/docker'
+    args:
+      - 'build'
+      - '--no-cache'
+      - '--build-arg'
+      - 'VITE_API_URL=${_VITE_API_URL}'
+      - '-t'
+      - 'gcr.io/$PROJECT_ID/inka-admin:latest'
+      - '-f'
+      - 'apps/admin/Dockerfile'
+      - '.'
+
+images:
+  - 'gcr.io/$PROJECT_ID/inka-admin:latest'
+
+substitutions:
+  _VITE_API_URL: 'https://inka-api-408800151466.europe-west1.run.app'
+
+options:
+  machineType: 'N1_HIGHCPU_8'

@@ -1,10 +1,10 @@
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ContextTypes, CommandHandler, MessageHandler, filters
 from apps.bot.bot.utils.db import get_db
-from packages.core.domains.masters.models import Master
-from packages.core.domains.clients.models import Client
+from packages.core.models.master import Master
+from packages.core.models.client import Client
 from packages.core.domains.auth.rbac import has_permission
-from packages.core.domains.auth.models import User
+from packages.core.models.user import User
 import logging
 
 logger = logging.getLogger(__name__)

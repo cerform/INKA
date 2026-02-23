@@ -9,10 +9,10 @@ from telegram.ext import (
 )
 from apps.bot.bot.states import BookingState
 from apps.bot.bot.utils.db import get_db
-from packages.core.domains.masters.models import Master
-from packages.core.domains.clients.models import Client
+from packages.core.models.master import Master
+from packages.core.models.client import Client
 from packages.core.domains.bookings.service import booking_service
-from packages.core.domains.auth.models import User
+from packages.core.models.user import User
 from datetime import datetime
 import logging
 

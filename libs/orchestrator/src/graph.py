@@ -1,7 +1,8 @@
 from langgraph.graph import StateGraph, END
-from libs.orchestrator.src.state import AgentState
-from libs.orchestrator.src.nodes.triage import triage_node
-from libs.orchestrator.src.nodes.booking import booking_node
+from packages.orchestrator.state import AgentState
+from packages.orchestrator.nodes.triage import triage_node
+from packages.orchestrator.nodes.booking import booking_node
+from packages.orchestrator.nodes.consultant import consultant_node
 
 def route_decision(state: AgentState):
     """
@@ -23,6 +24,7 @@ def create_orchestrator_graph():
     # Add Nodes
     workflow.add_node("triage", triage_node)
     workflow.add_node("booking", booking_node)
+    workflow.add_node("consultant", consultant_node)
 
     # Set Entry Point
     workflow.set_entry_point("triage")
@@ -33,11 +35,13 @@ def create_orchestrator_graph():
         route_decision,
         {
             "booking": "booking",
-            "consultant": END, # Placeholder
+            "consultant": "consultant",
             "support": END,    # Placeholder
             END: END
         }
     )
+    
+    workflow.add_edge("consultant", END)
 
     workflow.add_edge("booking", END)
 

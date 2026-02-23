@@ -12,3 +12,5 @@ class AgentState(TypedDict):
     current_intent: Optional[str]  # 'booking', 'info', 'support', 'general'
     next_action: Optional[str]
     booking_context: Optional[dict] # partial booking data
+    tenant_config: Optional[dict]  # Salon-specific rules, price list, etc.
+    session_metadata: Optional[dict] # e.g., thread_id, start_time

@@ -1,0 +1,248 @@
+name: Quality Gate
+
+on:
+  push:
+    branches:
+      - main
+      - develop
+  pull_request:
+    branches:
+      - main
+      - develop
+
+env:
+  REGISTRY: ghcr.io
+  PYTHONPATH: /workspace
+
+jobs:
+  # ─────────────────────────────────────────────────────────
+  # Test & Coverage Job
+  # ─────────────────────────────────────────────────────────
+  test:
+    runs-on: ubuntu-latest
+    name: "Tests & Coverage"
+    outputs:
+      coverage-percent: ${{ steps.coverage.outputs.coverage }}
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # Full history for git diff calculations
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e .[dev]
+
+      - name: Lint with ruff
+        run: |
+          ruff check . --exit-zero
+          ruff format --check . || ruff format .
+
+      - name: Type check with mypy
+        run: |
+          mypy --ignore-missing-imports apps/ libs/ || true
+
+      - name: Run tests with coverage
+        id: test
+        run: |
+          pytest \
+            apps/api/tests apps/bot/tests libs/ \
+            --cov=apps --cov=libs \
+            --cov-report=xml:coverage.xml \
+            --cov-report=json:coverage.json \
+            --cov-report=term-summary \
+            --junitxml=test-results.xml \
+            -v --tb=short
+
+      - name: Extract coverage percentage
+        id: coverage
+        run: |
+          python3 << 'EOF'
+          import json
+          with open('coverage.json') as f:
+            data = json.load(f)
+          coverage = data['totals']['percent_covered']
+          print(f"coverage={coverage:.1f}")
+          with open(os.environ['GITHUB_OUTPUT'], 'a') as f:
+            f.write(f"coverage={coverage:.1f}\n")
+          EOF
+
+      - name: Upload coverage to Codecov
+        uses: codecov/codecov-action@v3
+        with:
+          files: ./coverage.xml
+          flags: unittests
+          verbose: true
+
+      - name: Upload test results
+        if: always()
+        uses: actions/upload-artifact@v3
+        with:
+          name: test-results
+          path: |
+            test-results.xml
+            coverage.xml
+            coverage.json
+
+  # ─────────────────────────────────────────────────────────
+  # Security Scan Job (Trivy)
+  # ─────────────────────────────────────────────────────────
+  security:
+    runs-on: ubuntu-latest
+    name: "Security Scan (Trivy)"
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build Docker image
+        run: |
+          docker build -t inka-api:${{ github.sha }} .
+
+      - name: Run Trivy scan
+        uses: aquasecurity/trivy-action@master
+        with:
+          image-ref: "inka-api:${{ github.sha }}"
+          format: 'json'
+          output: 'trivy-report.json'
+
+      - name: Parse Trivy results
+        id: trivy
+        run: |
+          python3 << 'EOF'
+          import json
+          with open('trivy-report.json') as f:
+            data = json.load(f)
+          
+          crit = high = medium = 0
+          for result in data.get('Results', []):
+            for vuln in result.get('Vulnerabilities', []):
+              severity = vuln.get('Severity', '').upper()
+              if severity == 'CRITICAL': crit += 1
+              elif severity == 'HIGH': high += 1
+              elif severity == 'MEDIUM': medium += 1
+          
+          with open(os.environ['GITHUB_OUTPUT'], 'a') as f:
+            f.write(f"critical={crit}\n")
+            f.write(f"high={high}\n")
+            f.write(f"medium={medium}\n")
+          EOF
+
+      - name: Upload security scan results
+        uses: actions/upload-artifact@v3
+        with:
+          name: security-scan
+          path: trivy-report.json
+
+  # ─────────────────────────────────────────────────────────
+  # Defect Registry Job (stub)
+  # ─────────────────────────────────────────────────────────
+  defects:
+    runs-on: ubuntu-latest
+    name: "Collect Defects"
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Fetch defect counts
+        run: |
+          # TODO: Replace with real Jira/Linear API call
+          cat > defect_registry.json <<'EOF'
+          {
+            "open_s1": 0,
+            "open_s2": 0,
+            "open_s3": 0
+          }
+          EOF
+
+      - name: Upload defect registry
+        uses: actions/upload-artifact@v3
+        with:
+          name: defects
+          path: defect_registry.json
+
+  # ─────────────────────────────────────────────────────────
+  # Quality Gate Job
+  # ─────────────────────────────────────────────────────────
+  quality-gate:
+    needs: [test, security, defects]
+    runs-on: ubuntu-latest
+    name: "Quality Gate"
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: pip install -e .
+
+      - name: Download artifacts
+        uses: actions/download-artifact@v3
+
+      - name: Determine deployment target
+        id: target
+        run: |
+          if [[ "${{ github.ref }}" == "refs/heads/main" ]]; then
+            echo "target=prod" >> $GITHUB_OUTPUT
+          else
+            echo "target=stage" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Run quality gate
+        env:
+          COVERAGE_PCT: ${{ needs.test.outputs.coverage-percent }}
+          CRITICAL_VULNS: ${{ needs.security.outputs.critical }}
+          HIGH_VULNS: ${{ needs.security.outputs.high }}
+          GITHUB_SHA: ${{ github.sha }}
+          VERSION: ${{ github.sha }}
+          OPEN_S1_BUGS: 0  # TODO: fetch from defect registry
+          OPEN_S2_BUGS: 0
+        run: |
+          python scripts/quality_gate.py \
+            --target ${{ steps.target.outputs.target }} \
+            --version ${{ github.sha }} \
+            --output-json quality_report.json
+
+      - name: Upload quality report
+        if: always()
+        uses: actions/upload-artifact@v3
+        with:
+          name: quality-report
+          path: quality_report.json
+
+      - name: Comment on PR
+        if: github.event_name == 'pull_request'
+        uses: actions/github-script@v6
+        with:
+          script: |
+            const fs = require('fs');
+            const report = JSON.parse(fs.readFileSync('quality_report.json', 'utf8'));
+            
+            const comment = `## 📊 Quality Gate Report
+            
+            **Score:** ${report.final_score.toFixed(1)}/100
+            **Recommendation:** ${report.recommendation}
+            
+            | Dimension | Score |
+            |-----------|-------|
+            ${Object.entries(report.dimension_scores).map(([k, v]) => `| ${k} | ${v.toFixed(1)} |`).join('\n')}
+            
+            **Penalties:** ${report.penalties.length > 0 ? report.penalties.map(p => `\n- ${p.reason}: -${p.pts}`).join('') : 'None'}
+            `;
+            
+            github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: comment
+            });

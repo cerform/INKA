@@ -4,9 +4,9 @@ from sqlalchemy.orm import Session
 from pydantic import BaseModel
 from uuid import UUID
 from apps.api.app.deps.auth import get_db, PermissionChecker
-from packages.core.domains.audit.models import AuditLog
+from packages.core.models.audit import AuditLog
 from packages.core.domains.support.models import TestRun
-from packages.core.domains.auth.models import User
+from packages.core.models import User
 
 router = APIRouter()
 

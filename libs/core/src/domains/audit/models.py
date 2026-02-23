@@ -6,6 +6,7 @@ from sqlalchemy.orm import relationship
 from packages.db.base_class import Base
 
 class AuditLog(Base):
+    __table_args__ = {"extend_existing": True}
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     actor_id = Column(UUID(as_uuid=True), ForeignKey("user.id"), nullable=False)
     action = Column(Text, nullable=False)

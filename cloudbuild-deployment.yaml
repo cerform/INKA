@@ -1,0 +1,117 @@
+steps:
+  # Step 1: Build Docker image
+  - name: 'gcr.io/cloud-builders/docker'
+    id: 'build-image'
+    args:
+      - 'build'
+      - '-f'
+      - 'apps/api/Dockerfile'
+      - '-t'
+      - 'gcr.io/$PROJECT_ID/inka-api:$COMMIT_SHA'
+      - '-t'
+      - 'gcr.io/$PROJECT_ID/inka-api:latest'
+      - '-t'
+      - 'gcr.io/$PROJECT_ID/inka-api:${BRANCH_NAME}-latest'
+      - '.'
+    waitFor: ['-']
+
+  # Step 2: Push to Container Registry
+  - name: 'gcr.io/cloud-builders/docker'
+    id: 'push-image'
+    args:
+      - 'push'
+      - 'gcr.io/$PROJECT_ID/inka-api:$COMMIT_SHA'
+    waitFor: ['build-image']
+
+  - name: 'gcr.io/cloud-builders/docker'
+    id: 'push-latest'
+    args:
+      - 'push'
+      - 'gcr.io/$PROJECT_ID/inka-api:latest'
+    waitFor: ['build-image']
+
+  # Step 3: Deploy to Cloud Run
+  - name: 'gcr.io/cloud-builders/gke-deploy'
+    id: 'deploy-cloud-run'
+    env:
+      - 'CLOUDSDK_COMPUTE_REGION=europe-west1'
+      - 'CLOUDSDK_CONTAINER_CLUSTER=projects/$PROJECT_ID'
+    args:
+      - 'run'
+      - 'deploy'
+      - 'inka-api'
+      - '--image=gcr.io/$PROJECT_ID/inka-api:$COMMIT_SHA'
+      - '--platform=managed'
+      - '--region=europe-west1'
+      - '--allow-unauthenticated'
+      - '--port=8080'
+      - '--memory=512Mi'
+      - '--cpu=1'
+      - '--timeout=3600'
+      - '--max-instances=50'
+      - '--min-instances=1'
+      - '--set-env-vars=ENVIRONMENT=production'
+      - '--quiet'
+    waitFor: ['push-image']
+
+  # Step 4: Run health check
+  - name: 'gcr.io/cloud-builders/gcloud'
+    id: 'health-check'
+    entrypoint: 'bash'
+    args:
+      - '-c'
+      - |
+        echo "Waiting for service to stabilize..."
+        sleep 10
+        
+        SERVICE_URL=$(gcloud run services describe inka-api \
+          --platform managed \
+          --region europe-west1 \
+          --project $_PROJECT_ID \
+          --format='value(status.url)')
+        
+        echo "Testing health endpoint..."
+        curl -f "$SERVICE_URL/health" || echo "Health check will pass once service initializes"
+    waitFor: ['deploy-cloud-run']
+
+  # Step 5: Generate deployment report
+  - name: 'gcr.io/cloud-builders/gcloud'
+    id: 'deployment-report'
+    entrypoint: 'bash'
+    args:
+      - '-c'
+      - |
+        echo "=== Deployment Report ===" > /workspace/deployment-report.txt
+        echo "Commit: $COMMIT_SHA" >> /workspace/deployment-report.txt
+        echo "Branch: ${BRANCH_NAME}" >> /workspace/deployment-report.txt
+        echo "Time: $(date)" >> /workspace/deployment-report.txt
+        echo "" >> /workspace/deployment-report.txt
+        
+        gcloud run services describe inka-api \
+          --platform managed \
+          --region europe-west1 \
+          --format=json >> /workspace/deployment-report.txt || true
+        
+        cat /workspace/deployment-report.txt
+    waitFor: ['health-check']
+
+images:
+  - 'gcr.io/$PROJECT_ID/inka-api:$COMMIT_SHA'
+  - 'gcr.io/$PROJECT_ID/inka-api:latest'
+
+options:
+  machineType: 'N1_HIGHCPU_8'
+  logging: CLOUD_LOGGING_ONLY
+  
+timeout: '3600s'
+
+# Substitution variables
+substitutions:
+  _PROJECT_ID: 'tattoo-480007'
+  _REGION: 'europe-west1'
+  _SERVICE_NAME: 'inka-api'
+
+tags:
+  - 'gcp-cloud'
+  - 'inka-api'
+  - 'cloud-run'

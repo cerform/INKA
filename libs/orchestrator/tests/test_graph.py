@@ -1,6 +1,6 @@
 import pytest
 from langchain_core.messages import HumanMessage
-from libs.orchestrator.src.graph import create_orchestrator_graph
+from packages.orchestrator.graph import create_orchestrator_graph
 
 @pytest.mark.asyncio
 async def test_orchestrator_booking_flow():

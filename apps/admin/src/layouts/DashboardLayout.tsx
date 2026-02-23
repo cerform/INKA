@@ -2,10 +2,11 @@ import React from 'react';
 import { Link, useNavigate, Outlet } from 'react-router-dom';
 import {
     LayoutDashboard,
-    Calendar,
+    Globe,
+    Activity,
+    Shield,
+    BarChart3,
     Users,
-    BookOpen,
-    UserSquare2,
     Settings,
     LogOut,
     Menu,
@@ -14,12 +15,12 @@ import {
 import { useAuthStore } from '@/stores/auth';
 
 const navigation = [
-    { name: 'Dashboard', href: '/', icon: LayoutDashboard },
-    { name: 'Calendar', href: '/calendar', icon: Calendar },
-    { name: 'Clients', href: '/clients', icon: Users },
-    { name: 'Bookings', href: '/bookings', icon: BookOpen },
-    { name: 'Staff', href: '/staff', icon: UserSquare2 },
-    { name: 'Settings', href: '/settings', icon: Settings },
+    { name: 'System Overview', href: '/', icon: LayoutDashboard },
+    { name: 'Fleet View', href: '/tenants', icon: Globe },
+    { name: 'System Health', href: '/health', icon: Activity },
+    { name: 'Audit Logs', href: '/audit', icon: Shield },
+    { name: 'DORA Metrics', href: '/metrics', icon: BarChart3 },
+    { name: 'Global Settings', href: '/settings', icon: Settings },
 ];
 
 export default function DashboardLayout() {

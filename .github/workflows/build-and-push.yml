@@ -1,0 +1,58 @@
+name: Build & Push Images
+
+on:
+  push:
+    branches: [main, develop]
+    tags:
+      - "v[0-9]+.[0-9]+.[0-9]+"
+
+env:
+  PROJECT_ID: "${{ secrets.GCP_PROJECT_ID }}"
+  REGION: "europe-west1"
+  ARTIFACT_REPO: "inka-repo"
+
+jobs:
+  build-and-push:
+    name: "Build & Push (${{ matrix.service }})"
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        service: [api, bot, admin]
+    permissions:
+      contents: 'read'
+      id-token: 'write'
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Get version
+        id: get_version
+        run: |
+          VERSION=$(python -c "import tomllib; print(tomllib.load(open('pyproject.toml','rb'))['project']['version'])")
+          echo "version=${VERSION}" >> $GITHUB_OUTPUT
+
+      - name: Google Auth
+        uses: google-github-actions/auth@v2
+        with:
+          credentials_json: "${{ secrets.GCP_CREDENTIALS_PROD }}"
+
+      - name: Configure Docker
+        run: gcloud auth configure-docker ${{ env.REGION }}-docker.pkg.dev
+
+      - name: Build and Push image
+        run: |
+          IMAGE_PATH=${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.ARTIFACT_REPO }}/${{ matrix.service }}
+          TAG_SHA=${{ github.sha }}
+          TAG_VER=${{ steps.get_version.outputs.version }}
+          
+          docker build \
+            -t $IMAGE_PATH:$TAG_SHA \
+            -t $IMAGE_PATH:$TAG_VER \
+            -t $IMAGE_PATH:latest \
+            --label "git.sha=${{ github.sha }}" \
+            --label "version=$TAG_VER" \
+            -f apps/${{ matrix.service }}/Dockerfile .
+            
+          docker push $IMAGE_PATH:$TAG_SHA
+          docker push $IMAGE_PATH:$TAG_VER
+          docker push $IMAGE_PATH:latest
